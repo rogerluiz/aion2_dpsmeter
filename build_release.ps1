@@ -1,158 +1,97 @@
 # build_release.ps1
 # Script para construir versão release do AION 2 DPS Meter
-# Combina o backend Python (PyInstaller) com frontend Flutter
+# Compila o servidor Node.js (pkg) e empacota com o frontend Flutter
 
-Write-Host "🚀 AION 2 DPS Meter - Build Release" -ForegroundColor Cyan
+Write-Host "AION 2 DPS Meter - Build Release" -ForegroundColor Cyan
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkGray
 
 $ErrorActionPreference = "Stop"
-$rootDir = $PSScriptRoot
-$backendDir = Join-Path $rootDir "backend"
+$rootDir     = $PSScriptRoot
+$serverDir   = Join-Path $rootDir "server"
 $frontendDir = Join-Path $rootDir "frontend"
-$venvDir = Join-Path $rootDir ".venv"
+$assetsDir   = Join-Path $frontendDir "assets\backend"
+$distDir     = Join-Path $rootDir "dist"
 
 # ────────────────────────────────────────────────────────────────────
-# Passo 1: Verificar ambiente Python
+# Passo 1: Verificar pré-requisitos
 # ────────────────────────────────────────────────────────────────────
-Write-Host "`n[1/6] Verificando ambiente Python..." -ForegroundColor Yellow
+Write-Host "`n[1/5] Verificando pré-requisitos..." -ForegroundColor Yellow
 
-if (-not (Test-Path $venvDir)) {
-    Write-Host "❌ Virtual environment não encontrado em: $venvDir" -ForegroundColor Red
-    Write-Host "Execute: python -m venv .venv" -ForegroundColor Red
-    exit 1
-}
-
-$pythonExe = Join-Path $venvDir "Scripts\python.exe"
-if (-not (Test-Path $pythonExe)) {
-    Write-Host "❌ Python não encontrado no venv" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "✅ Python encontrado: $pythonExe" -ForegroundColor Green
-
-# ────────────────────────────────────────────────────────────────────
-# Passo 2: Instalar PyInstaller se necessário
-# ────────────────────────────────────────────────────────────────────
-Write-Host "`n[2/6] Verificando PyInstaller..." -ForegroundColor Yellow
-
-& $pythonExe -m pip install --quiet pyinstaller==6.10.0
+$nodeVersion = node --version 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Erro ao instalar PyInstaller" -ForegroundColor Red
+    Write-Host "❌ Node.js não encontrado. Instale em https://nodejs.org/" -ForegroundColor Red
     exit 1
 }
+Write-Host "  Node.js: $nodeVersion" -ForegroundColor Green
 
-Write-Host "✅ PyInstaller pronto" -ForegroundColor Green
+flutter --version 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ Flutter não encontrado." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  Flutter: OK" -ForegroundColor Green
+Write-Host "✅ Pré-requisitos OK" -ForegroundColor Green
 
 # ────────────────────────────────────────────────────────────────────
-# Passo 3: Compilar backend com PyInstaller
+# Passo 2: Instalar dependências do servidor Node.js
 # ────────────────────────────────────────────────────────────────────
-Write-Host "`n[3/6] Compilando backend Python..." -ForegroundColor Yellow
+Write-Host "`n[2/5] Instalando dependências do servidor Node.js..." -ForegroundColor Yellow
 
-Push-Location $backendDir
+Push-Location $serverDir
 try {
-    # Limpar builds anteriores
-    if (Test-Path "dist") { Remove-Item -Recurse -Force "dist" }
-    if (Test-Path "build") { Remove-Item -Recurse -Force "build" }
-    
-    # Executar PyInstaller
-    & $pythonExe -c @"
-import PyInstaller.__main__
-from pathlib import Path
-
-backend_dir = Path(r'$backendDir')
-
-PyInstaller.__main__.run([
-    str(backend_dir / 'main.py'),
-    '--name=aion2_backend',
-    '--onefile',
-    '--console',
-    '--clean',
-    '--add-data', f'{backend_dir / "packet_parser.py"};.',
-    '--add-data', f'{backend_dir / "calculator.py"};.',
-    '--add-data', f'{backend_dir / "capture.py"};.',
-    '--hidden-import', 'scapy.all',
-    '--hidden-import', 'scapy.layers.inet',
-    '--hidden-import', 'websockets',
-    '--hidden-import', 'asyncio',
-])
-"@
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Erro na compilação do backend" -ForegroundColor Red
-        exit 1
-    }
-    
-    $backendExe = Join-Path "dist" "aion2_backend.exe"
-    if (-not (Test-Path $backendExe)) {
-        Write-Host "❌ Backend executável não foi gerado" -ForegroundColor Red
-        exit 1
-    }
-    
-    $exeSize = (Get-Item $backendExe).Length / 1MB
-    Write-Host "✅ Backend compilado: aion2_backend.exe ($([math]::Round($exeSize, 2)) MB)" -ForegroundColor Green
-}
-finally {
-    Pop-Location
-}
+    npm install --legacy-peer-deps
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Erro no npm install" -ForegroundColor Red; exit 1 }
+    Write-Host "✅ Dependências instaladas" -ForegroundColor Green
+} finally { Pop-Location }
 
 # ────────────────────────────────────────────────────────────────────
-# Passo 4: Copiar backend para assets do Flutter
+# Passo 3: Compilar servidor Node.js com pkg
 # ────────────────────────────────────────────────────────────────────
-Write-Host "`n[4/6] Copiando backend para assets..." -ForegroundColor Yellow
+Write-Host "`n[3/5] Compilando servidor Node.js com pkg..." -ForegroundColor Yellow
 
-$assetsBackendDir = Join-Path $frontendDir "assets\backend"
-if (-not (Test-Path $assetsBackendDir)) {
-    New-Item -ItemType Directory -Path $assetsBackendDir -Force | Out-Null
-}
+Push-Location $serverDir
+try {
+    $serverDist = Join-Path $serverDir "dist"
+    if (Test-Path $serverDist) { Remove-Item -Recurse -Force $serverDist }
+    New-Item -ItemType Directory -Path $serverDist -Force | Out-Null
 
-$backendExe = Join-Path $backendDir "dist\aion2_backend.exe"
-$targetExe = Join-Path $assetsBackendDir "aion2_backend.exe"
+    npx pkg src/index.js --target node18-win-x64 --output "$serverDist\aion2_server.exe" --compress GZip
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Erro na compilação pkg" -ForegroundColor Red; exit 1 }
 
-Copy-Item $backendExe $targetExe -Force
-Write-Host "✅ Backend copiado para: frontend/assets/backend/" -ForegroundColor Green
+    $exePath = Join-Path $serverDist "aion2_server.exe"
+    if (-not (Test-Path $exePath)) { Write-Host "❌ aion2_server.exe não gerado" -ForegroundColor Red; exit 1 }
+
+    $sz = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
+    Write-Host "✅ Servidor compilado: aion2_server.exe ($sz MB)" -ForegroundColor Green
+} finally { Pop-Location }
+
+# ────────────────────────────────────────────────────────────────────
+# Passo 4: Copiar servidor para assets do Flutter
+# ────────────────────────────────────────────────────────────────────
+Write-Host "`n[4/5] Copiando servidor para assets do Flutter..." -ForegroundColor Yellow
+
+if (-not (Test-Path $assetsDir)) { New-Item -ItemType Directory -Path $assetsDir -Force | Out-Null }
+Copy-Item (Join-Path $serverDir "dist\aion2_server.exe") (Join-Path $assetsDir "aion2_server.exe") -Force
+Write-Host "✅ Servidor copiado para: frontend/assets/backend/" -ForegroundColor Green
 
 # ────────────────────────────────────────────────────────────────────
 # Passo 5: Compilar Flutter em release
 # ────────────────────────────────────────────────────────────────────
-Write-Host "`n[5/6] Compilando Flutter para Windows..." -ForegroundColor Yellow
+Write-Host "`n[5/5] Compilando Flutter para Windows (release)..." -ForegroundColor Yellow
 
 Push-Location $frontendDir
 try {
-    # Atualizar dependências
     flutter pub get
-    
-    # Build release
     flutter build windows --release
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Erro na compilação do Flutter" -ForegroundColor Red
-        exit 1
-    }
-    
+    if ($LASTEXITCODE -ne 0) { Write-Host "❌ Erro na compilação Flutter" -ForegroundColor Red; exit 1 }
     Write-Host "✅ Flutter compilado com sucesso" -ForegroundColor Green
-}
-finally {
-    Pop-Location
-}
+} finally { Pop-Location }
 
-# ────────────────────────────────────────────────────────────────────
-# Passo 6: Criar pacote de distribuição
-# ────────────────────────────────────────────────────────────────────
-Write-Host "`n[6/6] Criando pacote de distribuição..." -ForegroundColor Yellow
-
+# Criar pacote dist/
 $releaseDir = Join-Path $frontendDir "build\windows\x64\runner\Release"
-$distDir = Join-Path $rootDir "dist"
-
-if (Test-Path $distDir) {
-    Remove-Item -Recurse -Force $distDir
-}
-
+if (Test-Path $distDir) { Remove-Item -Recurse -Force $distDir }
 New-Item -ItemType Directory -Path $distDir -Force | Out-Null
-
-# Copiar todos os arquivos do release
 Copy-Item -Recurse "$releaseDir\*" $distDir -Force
-
-Write-Host "✅ Pacote criado em: dist/" -ForegroundColor Green
 
 # ────────────────────────────────────────────────────────────────────
 # Resumo final
@@ -162,11 +101,11 @@ Write-Host "✨ Build concluído com sucesso!`n" -ForegroundColor Green
 
 $frontendExe = Join-Path $distDir "frontend.exe"
 if (Test-Path $frontendExe) {
-    $exeSize = (Get-Item $frontendExe).Length / 1MB
-    Write-Host "📦 Executável: frontend.exe ($([math]::Round($exeSize, 2)) MB)" -ForegroundColor Cyan
-    Write-Host "📂 Localização: $distDir" -ForegroundColor Cyan
+    $sz = [math]::Round((Get-Item $frontendExe).Length / 1MB, 1)
+    Write-Host "  Executável : frontend.exe ($sz MB)" -ForegroundColor Cyan
+    Write-Host "  Localização: $distDir" -ForegroundColor Cyan
 }
 
 Write-Host "`nPara distribuir, copie toda a pasta 'dist/' para o computador de destino." -ForegroundColor Yellow
-Write-Host "⚠️  Requer privilégios de administrador para captura de pacotes!" -ForegroundColor Yellow
-Write-Host "⚠️  Npcap deve estar instalado no sistema de destino!" -ForegroundColor Yellow
+Write-Host "⚠️  Requer Npcap instalado e privilegios de Administrador." -ForegroundColor Yellow
+Write-Host "⚠️  Download Npcap: https://npcap.com/#download" -ForegroundColor Yellow

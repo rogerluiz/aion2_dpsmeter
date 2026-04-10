@@ -7,7 +7,7 @@ on:
   workflow_dispatch:  # Permite executar manualmente
 
 env:
-  PYTHON_VERSION: '3.13'
+  NODE_VERSION: '18'
   FLUTTER_CHANNEL: 'stable'
 
 jobs:
@@ -21,23 +21,24 @@ jobs:
         with:
           fetch-depth: 0  # Necessário para tags
       
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
       
-      - name: Install Python dependencies
+      - name: Install server dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-          pip install pyinstaller
+          cd server
+          npm install --legacy-peer-deps
+          echo "Dependencies installed"
       
-      - name: Build Python backend
+      - name: Build Node.js server with pkg
         run: |
-          cd backend
-          python build_backend.py
-          echo "Backend compiled successfully"
+          cd server
+          npm run build
+          echo "Server compiled successfully"
           dir dist
       
       - name: Setup Flutter
@@ -56,17 +57,11 @@ jobs:
           cd frontend
           flutter pub get
       
-      - name: Copy backend to Flutter assets
+      - name: Copy server to Flutter assets
         run: |
           New-Item -Path frontend/assets/backend -ItemType Directory -Force
-          Copy-Item backend/dist/aion2_backend.exe frontend/assets/backend/aion2_backend.exe
-          echo "Backend copied to assets"
-      
-      - name: Enable assets in pubspec.yaml
-        run: |
-          cd frontend
-          (Get-Content pubspec.yaml) -replace '  # assets:', '  assets:' -replace '  #   - assets/backend/', '    - assets/backend/' | Set-Content pubspec.yaml
-          echo "Assets section enabled in pubspec.yaml"
+          Copy-Item server/dist/aion2_server.exe frontend/assets/backend/aion2_server.exe
+          echo "Server copied to assets"
       
       - name: Build Flutter Windows Release
         run: |
@@ -120,7 +115,7 @@ jobs:
           ✅ 90 skills validadas com nomes
           ✅ Estatísticas de combate (crit rate, back attack, perfect, double, parry)
           ✅ Interface Flutter moderna e fluída
-          ✅ WebSocket interno (backend Python integrado)
+          ✅ WebSocket interno (servidor Node.js integrado)
           
           ## Troubleshooting
           
@@ -187,7 +182,7 @@ jobs:
           - 💪 8 classes supported with 90+ validated skills
           - 📊 Combat statistics (crit, back attack, perfect, double, parry)
           - 🎨 Modern Flutter UI with transparency
-          - 🔧 Single executable with embedded Python backend
+          - 🔧 Single executable with embedded Node.js server
           
           ---
           

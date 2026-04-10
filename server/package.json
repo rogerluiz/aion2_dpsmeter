@@ -7,11 +7,22 @@
     "start": "node src/index.js",
     "start:mock": "node src/index.js --mock",
     "interfaces": "node src/index.js --list-interfaces",
-    "dev": "node src/index.js --mock"
+    "dev": "node src/index.js --mock",
+    "build": "pkg src/index.js --target node18-win-x64 --output dist/aion2_server.exe --compress GZip"
+  },
+  "pkg": {
+    "assets": [],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist"
   },
   "dependencies": {
     "cap": "^0.2.1",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
   },
   "engines": {
     "node": ">=18"

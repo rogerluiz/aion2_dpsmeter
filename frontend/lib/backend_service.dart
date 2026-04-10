@@ -3,78 +3,74 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
-/// Serviço para gerenciar o processo do backend Python empacotado
+/// Serviço para gerenciar o processo do servidor Node.js empacotado
 class BackendService {
   Process? _backendProcess;
   bool _isRunning = false;
-  
+
+  static const String _exeName = 'aion2_server.exe';
+
   /// Verifica se o backend está rodando
   bool get isRunning => _isRunning;
-  
-  /// Inicia o backend automaticamente
+
+  /// Inicia o servidor Node.js automaticamente
   Future<bool> start({bool useMock = false}) async {
     if (_isRunning) {
-      debugPrint('⚠️ Backend já está rodando');
+      debugPrint('Backend já está rodando');
       return true;
     }
-    
+
     try {
-      // Localiza o executável do backend
-      final backendExe = await _locateBackendExecutable();
-      
-      if (backendExe == null) {
-        debugPrint('❌ Backend executável não encontrado');
+      final serverExe = await _locateBackendExecutable();
+
+      if (serverExe == null) {
+        debugPrint('Servidor executável não encontrado ($_exeName)');
         return false;
       }
-      
-      debugPrint('🚀 Iniciando backend: $backendExe');
-      
-      // Argumentos do backend
+
+      debugPrint('Iniciando servidor: $serverExe');
+
       final List<String> args = useMock ? <String>['--mock'] : <String>[];
-      
-      // Inicia processo do backend
+
       _backendProcess = await Process.start(
-        backendExe,
+        serverExe,
         args,
         mode: ProcessStartMode.detached,
       );
-      
+
       _isRunning = true;
-      
-      // Aguarda um pouco para o backend iniciar
+
+      // Aguarda o servidor abrir o WebSocket
       await Future.delayed(const Duration(seconds: 2));
-      
-      debugPrint('✅ Backend iniciado com sucesso');
+
+      debugPrint('Servidor iniciado com sucesso (PID: ${_backendProcess!.pid})');
       return true;
-      
     } catch (e) {
-      debugPrint('❌ Erro ao iniciar backend: $e');
+      debugPrint('Erro ao iniciar servidor: $e');
       return false;
     }
   }
-  
-  /// Para o backend
+
+  /// Para o servidor
   Future<void> stop() async {
     if (_backendProcess != null) {
-      debugPrint('🛑 Parando backend...');
       _backendProcess!.kill();
       _backendProcess = null;
       _isRunning = false;
-      debugPrint('✅ Backend parado');
     }
   }
-  
-  /// Localiza o executável do backend
+
+  /// Localiza o executável do servidor Node.js
   Future<String?> _locateBackendExecutable() async {
-    // Em desenvolvimento: procura na pasta backend/dist
+    // Em desenvolvimento: procura em server/dist/
     if (!kReleaseMode) {
       final devPath = path.join(
-        Directory.current.parent.path,
-        'backend',
+        Directory.current.path,
+        'server',
         'dist',
-        'aion2_backend.exe',
+        _exeName,
       );
-      
+
       if (await File(devPath).exists()) {
         return devPath;
       }
@@ -82,29 +78,29 @@ class BackendService {
     
     // Em release: procura junto ao executável do Flutter
     final exeDir = path.dirname(Platform.resolvedExecutable);
-    
-    // Opção 1: Na pasta data/flutter_assets/assets/backend (onde Flutter coloca os assets)
-    final assetsPath = path.join(exeDir, 'data', 'flutter_assets', 'assets', 'backend', 'aion2_backend.exe');
+
+    // Opção 1: Na pasta data/flutter_assets/assets/backend
+    final assetsPath = path.join(exeDir, 'data', 'flutter_assets', 'assets', 'backend', _exeName);
     if (await File(assetsPath).exists()) {
       return assetsPath;
     }
-    
-    // Opção 2: Dentro de pasta 'backend' ao lado do executável
-    final bundledPath1 = path.join(exeDir, 'backend', 'aion2_backend.exe');
+
+    // Opção 2: Na pasta backend/ ao lado do executável
+    final bundledPath1 = path.join(exeDir, 'backend', _exeName);
     if (await File(bundledPath1).exists()) {
       return bundledPath1;
     }
-    
+
     // Opção 3: No mesmo diretório do executável
-    final bundledPath2 = path.join(exeDir, 'aion2_backend.exe');
+    final bundledPath2 = path.join(exeDir, _exeName);
     if (await File(bundledPath2).exists()) {
       return bundledPath2;
     }
-    
+
     return null;
   }
-  
-  /// Verifica se o backend está acessível via WebSocket
+
+  /// Verifica se o servidor está acessível via WebSocket
   Future<bool> checkConnection() async {
     try {
       final socket = await WebSocket.connect('ws://localhost:8765');

@@ -39,9 +39,9 @@ void main() async {
     await windowManager.show();
   });
 
-  // Backend Node.js rodando separado — não iniciar o backend Python
-  // final backendService = BackendService();
-  // await backendService.start(useMock: true);
+  // Inicia o servidor Node.js empacotado automaticamente
+  final backendService = BackendService();
+  await backendService.start();
 
   runApp(
     ChangeNotifierProvider(
