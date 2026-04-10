@@ -3,8 +3,13 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*.*.*'  # Dispara em tags como v1.0.0, v1.2.3, etc
-  workflow_dispatch:  # Permite executar manualmente
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versao do build (ex: v1.0.0)'
+        required: false
+        default: 'v0.0.0-dev'
 
 env:
   NODE_VERSION: '18'
@@ -14,201 +19,155 @@ jobs:
   build-windows:
     name: Build Windows Release
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Necessário para tags
-      
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $v = "${{ github.event.inputs.version }}"
+          } else {
+            $v = "${{ github.ref_name }}"
+          }
+          $dist = "aion2_dpsmeter-$v-windows-x64"
+          "VERSION=$v"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "DIST=$dist"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Version: $v  |  Dist: $dist"
+
+      # Npcap é necessário para o módulo nativo 'cap' compilar
+      - name: Install Npcap
+        shell: pwsh
+        run: |
+          $out = "$env:TEMP\npcap.exe"
+          Invoke-WebRequest -Uri "https://npcap.com/dist/npcap-1.79.exe" -OutFile $out -UseBasicParsing
+          Start-Process -FilePath $out -ArgumentList "/S", "/winpcap_mode=yes" -Wait
+          Write-Host "Npcap installed"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: server/package-lock.json
-      
+
       - name: Install server dependencies
+        shell: pwsh
         run: |
-          cd server
+          Set-Location server
           npm install --legacy-peer-deps
-          echo "Dependencies installed"
-      
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "Dependencies installed"
+
       - name: Build Node.js server with pkg
+        shell: pwsh
         run: |
-          cd server
+          Set-Location server
           npm run build
-          echo "Server compiled successfully"
-          dir dist
-      
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $exe = "dist\aion2_server.exe"
+          if (-not (Test-Path $exe)) { Write-Error "aion2_server.exe not found"; exit 1 }
+          $sz = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+          Write-Host "aion2_server.exe: $sz MB"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
-      
-      - name: Verify Flutter installation
+
+      - name: Flutter pub get
+        shell: pwsh
         run: |
-          flutter --version
-          flutter doctor -v
-      
-      - name: Get Flutter dependencies
-        run: |
-          cd frontend
+          Set-Location frontend
           flutter pub get
-      
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Copy server to Flutter assets
+        shell: pwsh
         run: |
-          New-Item -Path frontend/assets/backend -ItemType Directory -Force
-          Copy-Item server/dist/aion2_server.exe frontend/assets/backend/aion2_server.exe
-          echo "Server copied to assets"
-      
+          New-Item -Path frontend/assets/backend -ItemType Directory -Force | Out-Null
+          Copy-Item server/dist/aion2_server.exe frontend/assets/backend/aion2_server.exe -Force
+          Write-Host "Server copied to assets/backend/"
+
       - name: Build Flutter Windows Release
+        shell: pwsh
         run: |
-          cd frontend
+          Set-Location frontend
           flutter build windows --release
-          echo "Flutter build completed"
-      
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "Flutter build completed"
+
       - name: Create distribution package
+        id: dist
+        shell: pwsh
         run: |
-          $VERSION = "${{ github.ref_name }}"
-          $DIST_DIR = "aion2_dpsmeter-$VERSION-windows-x64"
-          
-          # Criar estrutura de diretórios
-          New-Item -Path $DIST_DIR -ItemType Directory -Force
-          
-          # Copiar executável Flutter e DLLs
-          Copy-Item -Recurse frontend/build/windows/x64/runner/Release/* $DIST_DIR/
-          
-          # Criar README para o release
-          @"
-          # AION 2 DPS Meter - $VERSION
-          
-          ## Instalação
-          
-          1. **Instale o Npcap** (obrigatório para captura de pacotes):
-             - Download: https://npcap.com/#download
-             - Marque a opção "WinPcap API-compatible Mode" durante instalação
-          
-          2. **Execute como Administrador**:
-             - Clique com botão direito em aion2_dpsmeter.exe
-             - Selecione "Executar como administrador"
-          
-          ## Requisitos
-          
-          - Windows 10/11 (64-bit)
-          - Npcap instalado
-          - Privilégios de Administrador (para captura de pacotes)
-          
-          ## Uso
-          
-          1. Execute o aplicativo como administrador
-          2. Inicie o AION 2 TW
-          3. O backend detectará automaticamente a porta do jogo
-          4. Entre em combate para ver estatísticas em tempo real
-          
-          ## Features
-          
-          ✅ Captura automática de pacotes AION 2 TW
-          ✅ DPS/HPS em tempo real
-          ✅ Detecção automática de classe (8 classes)
-          ✅ 90 skills validadas com nomes
-          ✅ Estatísticas de combate (crit rate, back attack, perfect, double, parry)
-          ✅ Interface Flutter moderna e fluída
-          ✅ WebSocket interno (servidor Node.js integrado)
-          
-          ## Troubleshooting
-          
-          **Backend não inicia:**
-          - Verifique se o Npcap está instalado
-          - Execute como Administrador
-          - Verifique antivírus/firewall
-          
-          **Porta não detectada:**
-          - Certifique-se que o AION 2 está rodando
-          - Entre em uma zona de combate
-          - Verifique logs em %TEMP%\aion2_dpsmeter.log
-          
-          ## Código Fonte
-          
-          https://github.com/rogerluiz/aion2_dpsmeter
-          
-          ## Licença
-          
-          MIT License - Livre para uso pessoal e comercial
-          "@ | Out-File -FilePath "$DIST_DIR/README.txt" -Encoding UTF8
-          
-          # Comprimir em ZIP
-          Compress-Archive -Path $DIST_DIR -DestinationPath "$DIST_DIR.zip" -Force
-          
-          echo "Package created: $DIST_DIR.zip"
-          dir *.zip
-      
+          $name = "${{ steps.ver.outputs.DIST }}"
+          New-Item -Path $name -ItemType Directory -Force | Out-Null
+          Copy-Item -Recurse "frontend/build/windows/x64/runner/Release/*" "$name/" -Force
+
+          @(
+            "# AION 2 DPS Meter - ${{ steps.ver.outputs.VERSION }}",
+            "",
+            "## Requisitos",
+            "- Windows 10/11 (64-bit)",
+            "- Npcap instalado: https://npcap.com/#download",
+            "  (marque 'WinPcap API-compatible Mode' na instalacao)",
+            "- Executar como Administrador",
+            "",
+            "## Uso",
+            "1. Execute frontend.exe como Administrador",
+            "2. Inicie o AION 2 TW",
+            "3. Entre em combate para ver DPS/HPS em tempo real",
+            "",
+            "## Troubleshooting",
+            "- Verifique se o Npcap esta instalado",
+            "- Execute como Administrador",
+            "- Verifique antivirus/firewall"
+          ) | Out-File -FilePath "$name/README.txt" -Encoding UTF8
+
+          Compress-Archive -Path $name -DestinationPath "$name.zip" -Force
+          Write-Host "Package: $name.zip ($([math]::Round((Get-Item "$name.zip").Length / 1MB, 1)) MB)"
+
       - name: Generate changelog
-        id: changelog
+        shell: pwsh
         run: |
-          $VERSION = "${{ github.ref_name }}"
-          
-          # Tentar obter últimas tags
-          $PREV_TAG = git describe --abbrev=0 --tags HEAD^ 2>$null
-          
-          if ($PREV_TAG) {
-            $CHANGES = git log --pretty=format:"- %s" "$PREV_TAG..HEAD"
+          $prevTag = git describe --abbrev=0 --tags HEAD^ 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $prevTag) {
+            $changes = git log --pretty=format:"- %s" -n 20
           } else {
-            $CHANGES = git log --pretty=format:"- %s" HEAD~10..HEAD
+            $changes = git log --pretty=format:"- %s" "${prevTag}..HEAD"
           }
-          
-          $CHANGELOG = @"
-          ## 🚀 Release $VERSION
-          
-          ### What's Changed
-          
-          $CHANGES
-          
-          ### 📦 Downloads
-          
-          - **Windows 64-bit**: aion2_dpsmeter-$VERSION-windows-x64.zip
-          
-          ### 📋 Requirements
-          
-          - Windows 10/11 (64-bit)
-          - [Npcap](https://npcap.com/#download) (instale com "WinPcap API-compatible Mode")
-          - Run as Administrator
-          
-          ### ✨ Features
-          
-          - 🎯 Real-time DPS/HPS tracking
-          - 🔍 Auto-detect AION 2 TW game port
-          - 💪 8 classes supported with 90+ validated skills
-          - 📊 Combat statistics (crit, back attack, perfect, double, parry)
-          - 🎨 Modern Flutter UI with transparency
-          - 🔧 Single executable with embedded Node.js server
-          
-          ---
-          
-          **Full Changelog**: https://github.com/rogerluiz/aion2_dpsmeter/compare/$PREV_TAG...$VERSION
-          "@ 
-          
-          # Salvar changelog em arquivo para upload
-          $CHANGELOG | Out-File -FilePath changelog.md -Encoding UTF8
-          
-          echo "Changelog generated"
-      
+          @(
+            "## O que mudou",
+            "",
+            ($changes -join "`n"),
+            "",
+            "## Requisitos",
+            "- Windows 10/11 (64-bit)",
+            "- [Npcap](https://npcap.com/#download) com WinPcap API-compatible Mode",
+            "- Executar como Administrador"
+          ) | Out-File -FilePath changelog.md -Encoding UTF8
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
         with:
           body_path: changelog.md
-          files: |
-            aion2_dpsmeter-*.zip
+          files: ${{ steps.ver.outputs.DIST }}.zip
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Upload build artifacts
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aion2_dpsmeter-${{ github.ref_name }}-windows-x64
-          path: aion2_dpsmeter-*.zip
+          name: ${{ steps.ver.outputs.DIST }}
+          path: ${{ steps.ver.outputs.DIST }}.zip
           retention-days: 30

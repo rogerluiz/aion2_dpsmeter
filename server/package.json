@@ -11,7 +11,7 @@
     "build": "pkg src/index.js --target node18-win-x64 --output dist/aion2_server.exe --compress GZip"
   },
   "pkg": {
-    "assets": [],
+    "assets": ["node_modules/cap/build/Release/cap.node"],
     "targets": [
       "node18-win-x64"
     ],
