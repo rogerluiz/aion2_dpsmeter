@@ -5,51 +5,46 @@ Overlay de DPS em tempo real para AION 2 usando captura de pacotes via Npcap.
 ## Arquitetura
 
 ```
-Npcap → Python (Scapy + WebSocket) → Flutter (overlay transparente)
+Npcap → Node.js (cap + WebSocket) → Flutter (overlay transparente)
 ```
 
 ## Pré-requisitos
 
 - **Windows 10/11** (Npcap só funciona no Windows)
 - **Npcap**: https://npcap.com/#download (instale com "WinPcap API compatibility")
-- **Python 3.11+**
+- **Node.js 18+**: https://nodejs.org/
 - **Flutter 3.x** com suporte a Windows Desktop
 
 ---
 
-## Backend (Python)
+## Servidor Node.js
 
 ### Instalação para Desenvolvimento
 
-```bash
-# Criar virtual environment
-python -m venv .venv
-
-# Ativar venv (Windows PowerShell)
-.venv\Scripts\Activate.ps1
-
-# Instalar dependências
-cd backend
-pip install -r requirements.txt
+```powershell
+cd server
+npm install
 ```
 
 ### Executar em modo simulado (para desenvolvimento)
 
-```bash
-python main.py --mock
+```powershell
+npm run dev
+# ou
+node src/index.js --mock
 ```
 
 ### Executar com captura real (requer Administrador)
 
-```bash
+```powershell
 # Listar interfaces de rede disponíveis
-python main.py --list-ifaces
+node src/index.js --list-interfaces
 
-# Captura na interface padrão
-python main.py
+# Captura na interface padrão (auto-detect)
+node src/index.js
 
-# Especificar interface (use o nome exato do --list-ifaces)
-python main.py --iface "Ethernet"
+# Especificar interface
+node src/index.js --iface="\Device\NPF_{GUID}"
 ```
 
 > ⚠️ A captura real requer que o processo seja executado **como Administrador**.
@@ -60,20 +55,20 @@ python main.py --iface "Ethernet"
 
 ### Instalação
 
-```bash
+```powershell
 cd frontend
 flutter pub get
 ```
 
 ### Executar
 
-```bash
+```powershell
 flutter run -d windows
 ```
 
 ### Build release
 
-```bash
+```powershell
 flutter build windows --release
 ```
 
@@ -128,11 +123,11 @@ Veja **[AION2_PROTOCOL.md](AION2_PROTOCOL.md)** para:
 
 O parser já está configurado com protocolo real do AION 2 TW.
 
-Para debug ou ajustes finos, ative logs em `packet_parser.py`:
+Para debug de pacotes brutos, defina a variável de ambiente antes de iniciar:
 
-```python
-# No método _parse_damage_packet, adicione:
-logger.info(f"Skill: {skill_id}, Damage: {damage}, Crit: {is_crit}")
+```powershell
+$env:DEBUG = "1"
+node src/index.js
 ```
 
 ---
@@ -141,20 +136,24 @@ logger.info(f"Skill: {skill_id}, Damage: {damage}, Crit: {is_crit}")
 
 ```
 aion2_dpsmeter/
-├── backend/
-│   ├── main.py          # Entry point + WebSocket server (ws://localhost:8765)
-│   ├── capture.py       # Captura com Npcap via Scapy / MockCapture
-│   ├── parser.py        # Parse dos pacotes → CombatEvent
-│   ├── calculator.py    # DPS/HPS com janela deslizante de 10s
-│   └── requirements.txt
+├── server/
+│   ├── src/
+│   │   ├── index.js         # Entry point + orquestração
+│   │   ├── capture.js       # Captura com Npcap via cap / MockCapture
+│   │   ├── packet_parser.js # Parse dos pacotes → CombatEvent
+│   │   ├── calculator.js    # DPS/HPS com janela deslizante de 10s
+│   │   ├── ws_server.js     # WebSocket server (ws://localhost:8765)
+│   │   └── scan_connections.js # Auto-detect porta do jogo
+│   └── package.json
 └── frontend/
     ├── pubspec.yaml
     └── lib/
-        ├── main.dart        # App Flutter + janela overlay
-        ├── ws_service.dart  # WebSocket client com auto-reconexão
-        ├── models.dart      # PlayerStats, DpsSnapshot, DpsPoint
-        ├── dps_chart.dart   # Gráfico de linha em tempo real (fl_chart)
-        └── party_table.dart # Tabela de ranking com barra de progresso
+        ├── main.dart            # App Flutter + janela overlay
+        ├── backend_service.dart # Lança aion2_server.exe automaticamente
+        ├── ws_service.dart      # WebSocket client com auto-reconexão
+        ├── models.dart          # PlayerStats, DpsSnapshot, DpsPoint
+        ├── dps_chart.dart       # Gráfico de linha em tempo real (fl_chart)
+        └── party_table.dart     # Tabela de ranking com barra de progresso
 ```
 
 ## Protocolo WebSocket
@@ -199,8 +198,6 @@ O Flutter pode enviar:
 
 ### Build Automático (Recomendado)
 
-O projeto inclui um script PowerShell que automatiza todo o processo:
-
 ```powershell
 # No diretório raiz do projeto
 .\build_release.ps1
@@ -208,55 +205,35 @@ O projeto inclui um script PowerShell que automatiza todo o processo:
 
 Este script irá:
 
-1. ✅ Verificar o ambiente Python (virtual environment)
-2. ✅ Instalar PyInstaller se necessário
-3. ✅ Compilar o backend Python em executável standalone
-4. ✅ Copiar o backend para `frontend/assets/backend/`
+1. ✅ Verificar Node.js e Flutter
+2. ✅ Instalar dependências do servidor (`npm install`)
+3. ✅ Compilar o servidor com `pkg` → `aion2_server.exe` (~36 MB)
+4. ✅ Copiar `aion2_server.exe` para `frontend/assets/backend/`
 5. ✅ Compilar o Flutter em modo release
-6. ✅ Criar pacote de distribuição em `dist/`
 
 ### Build Manual
 
-Se preferir executar manualmente:
-
-#### 1. Compilar backend com PyInstaller
-
 ```powershell
-cd backend
-python -m PyInstaller main.py `
-  --name=aion2_backend `
-  --onefile `
-  --console `
-  --add-data "packet_parser.py;." `
-  --add-data "calculator.py;." `
-  --add-data "capture.py;." `
-  --hidden-import scapy.all `
-  --hidden-import websockets
-```
+# 1. Compilar servidor Node.js com pkg
+cd server
+npm run build
+# Resultado: server/dist/aion2_server.exe
 
-Resultado: `backend/dist/aion2_backend.exe`
+# 2. Copiar para assets do Flutter
+Copy-Item server\dist\aion2_server.exe frontend\assets\backend\
 
-#### 2. Copiar backend para assets do Flutter
-
-```powershell
-Copy-Item backend\dist\aion2_backend.exe frontend\assets\backend\
-```
-
-#### 3. Compilar Flutter
-
-```powershell
+# 3. Compilar Flutter
 cd frontend
 flutter build windows --release
+# Resultado: frontend/build/windows/x64/runner/Release/
 ```
-
-Resultado: `frontend/build/windows/x64/runner/Release/`
 
 ### Distribuição
 
 O pacote final estará em `dist/` e contém:
 
-- `frontend.exe` - Aplicação principal Flutter
-- `aion2_backend.exe` - Backend Python (embutido nos assets)
+- `frontend.exe` — Aplicação principal Flutter
+- `aion2_server.exe` — Servidor Node.js (embutido nos assets)
 - DLLs e dependências do Flutter
 - Pasta `data/` com assets compilados
 
@@ -266,17 +243,12 @@ O pacote final estará em `dist/` e contém:
 - ⚠️ Npcap instalado: https://npcap.com/#download
 - ⚠️ Privilégios de Administrador (para captura de pacotes)
 
-**Para distribuir:**
-Copie toda a pasta `dist/` para o computador de destino. O backend Python está empacotado dentro do executável Flutter e será iniciado automaticamente.
-
 ### Modo de Desenvolvimento vs Release
 
-- **Desenvolvimento**: Backend e frontend executados separadamente
-  - Backend: `python main.py --mock`
-  - Frontend: `flutter run -d windows`
-- **Release**: Executável único que inicia backend automaticamente
-  - Execute: `frontend.exe` (na pasta `dist/`)
-  - Backend é extraído e iniciado nos bastidores
+- **Desenvolvimento**: Servidor e frontend executados separadamente
+  - Servidor: `cd server && node src/index.js --mock`
+  - Frontend: `cd frontend && flutter run -d windows`
+- **Release**: `frontend.exe` inicia o servidor Node.js embutido automaticamente
 
 ---
 
@@ -284,113 +256,46 @@ Copie toda a pasta `dist/` para o computador de destino. O backend Python está 
 
 ### GitHub Actions
 
-O projeto possui 2 workflows configurados:
+#### **Build and Release** ([`.github/workflows/release.yml`](.github/workflows/release.yml))
 
-#### 1. **CI - Build and Test** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
-
-Executa automaticamente em:
-
-- Push para `main` ou `develop`
-- Pull requests
-- Manualmente via workflow_dispatch
+Executa em push de tags `v*.*.*` ou manualmente via `workflow_dispatch`.
 
 **O que faz:**
 
-- ✅ Testa imports do Python backend
-- ✅ Compila backend com PyInstaller
-- ✅ Valida código Flutter com `flutter analyze`
-- ✅ Executa testes do Flutter
-- ✅ Faz build completo Windows em modo dry-run
-
-#### 2. **Build and Release** ([`.github/workflows/release.yml`](.github/workflows/release.yml))
-
-Executa automaticamente em:
-
-- Push de tags `v*.*.*` (ex: `v1.0.0`)
-- Manualmente via workflow_dispatch
-
-**O que faz:**
-
-- ✅ Compila backend Python com PyInstaller
-- ✅ Compila frontend Flutter para Windows
-- ✅ Cria pacote ZIP de distribuição
-- ✅ Gera changelog automático
-- ✅ Cria GitHub Release com binários anexados
-- ✅ Upload de artefatos com retenção de 30 dias
+1. ✅ Instala Npcap silenciosamente (necessário para compilar o módulo `cap`)
+2. ✅ `npm install` + `npm run build` → `aion2_server.exe` via `pkg`
+3. ✅ Compila Flutter para Windows release
+4. ✅ Cria ZIP de distribuição
+5. ✅ Cria GitHub Release com binários anexados (apenas em push de tag)
+6. ✅ Upload de artefatos com retenção de 30 dias
 
 ### Como Criar uma Release
 
-#### Método 1: Via Tag (Recomendado)
-
 ```powershell
-# 1. Atualizar versão no código (se necessário)
-# 2. Commit das mudanças
-git add .
-git commit -m "chore: bump version to 1.0.0"
-
-# 3. Criar e enviar tag
-git tag -a v1.0.0 -m "Release 1.0.0 - Descrição das mudanças"
+git tag -a v1.0.0 -m "Release 1.0.0"
 git push origin v1.0.0
-
-# O GitHub Actions irá automaticamente:
-# - Compilar o projeto
-# - Criar a release
-# - Anexar os binários
+# O GitHub Actions compila e publica automaticamente
 ```
 
-#### Método 2: Via Interface GitHub
-
-1. Acesse: https://github.com/rogerluiz/aion2_dpsmeter/releases/new
-2. Clique em "Choose a tag" → Digite `v1.0.0` → "Create new tag on publish"
-3. Preencha título: "Release 1.0.0"
-4. Preencha descrição das mudanças
-5. Clique em "Publish release"
-
-O workflow será disparado automaticamente e os binários serão anexados à release.
-
-#### Método 3: Execução Manual do Workflow
-
-1. Acesse: https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/release.yml
-2. Clique em "Run workflow"
-3. Selecione o branch
-4. Clique em "Run workflow"
-
-### Versionamento Semântico
-
-Usamos [Semantic Versioning](https://semver.org/):
-
-- **MAJOR** (v**1**.0.0): Mudanças incompatíveis na API
-- **MINOR** (v1.**1**.0): Novas funcionalidades compatíveis
-- **PATCH** (v1.0.**1**): Bug fixes
-
-**Exemplos:**
-
-- `v1.0.0` - Release inicial
-- `v1.1.0` - Adicionado suporte a novos opcodes
-- `v1.1.1` - Corrigido bug de parsing
-- `v2.0.0` - Mudança no formato de dados WebSocket
+Para testar sem criar release, use **Run workflow** na interface do GitHub Actions com uma versão de teste.
 
 ### Artefatos da Release
 
-Cada release contém:
-
 ```
 aion2_dpsmeter-v1.0.0-windows-x64.zip
-├── aion2_dpsmeter.exe          # Executável principal Flutter
+├── frontend.exe                # Executável principal Flutter
 ├── flutter_windows.dll         # DLLs do Flutter
-├── data/                       # Assets compilados
+├── data/
 │   └── flutter_assets/
 │       └── assets/
 │           └── backend/
-│               └── backend.exe # Backend Python embutido
-└── README.txt                  # Instruções de instalação
+│               └── aion2_server.exe  # Servidor Node.js embutido (~36 MB)
+└── README.txt
 ```
 
-**Tamanho aproximado:** 40-50 MB (comprimido)
+**Tamanho aproximado:** 50-60 MB (comprimido)
 
 ### Status dos Builds
-
-[![CI - Build and Test](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/ci.yml/badge.svg)](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/ci.yml)
 
 [![Release](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/release.yml/badge.svg)](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/release.yml)
 
@@ -398,30 +303,34 @@ aion2_dpsmeter-v1.0.0-windows-x64.zip
 
 ## Troubleshooting
 
-### "Backend executável não encontrado"
-
-Certifique-se de que o backend foi compilado e copiado:
+### "Servidor não encontrado" / Backend não inicia
 
 ```powershell
-# Verificar se existe
-Test-Path frontend\assets\backend\aion2_backend.exe
+# Verificar se o executável existe
+Test-Path frontend\assets\backend\aion2_server.exe
+
+# Compilar se necessário
+cd server ; npm run build
+Copy-Item dist\aion2_server.exe ..\frontend\assets\backend\
 ```
 
-### "Erro ao iniciar backend"
+### "Erro ao iniciar servidor"
 
 Execute manualmente para ver logs de erro:
 
 ```powershell
-.\dist\aion2_backend.exe --mock
+node server\src\index.js --mock
 ```
 
-### Build do PyInstaller falha
+### Captura não detecta pacotes
 
-Reinstale as dependências no venv:
-
-```powershell
-.venv\Scripts\Activate.ps1
-pip install --force-reinstall -r backend\requirements.txt
-```
+- Certifique-se que o Npcap está instalado
+- Execute como **Administrador**
+- Verifique se o AION 2 TW está rodando
+- Liste as interfaces e especifique a correta:
+  ```powershell
+  node server\src\index.js --list-interfaces
+  node server\src\index.js --iface="\Device\NPF_{GUID}"
+  ```
 
 ---
