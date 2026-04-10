@@ -30,7 +30,7 @@ class BackendService {
       debugPrint('🚀 Iniciando backend: $backendExe');
       
       // Argumentos do backend
-      final args = useMock ? ['--mock'] : [];
+      final List<String> args = useMock ? ['--mock'] : [];
       
       // Inicia processo do backend
       _backendProcess = await Process.start(
