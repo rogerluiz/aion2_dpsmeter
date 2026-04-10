@@ -63,10 +63,10 @@ wsServer.on('reset', () => {
   console.log('[INFO] Sessão resetada pelo cliente.');
 });
 
-// Broadcast snapshot a cada segundo (mesmo formato do backend Python)
+// Broadcast snapshot a cada 200ms para UI responsiva
 const snapshotInterval = setInterval(() => {
   wsServer.broadcast(calculator.getSnapshot());
-}, 1000);
+}, 200);
 
 // --- Modo MOCK ---
 if (isMock) {
