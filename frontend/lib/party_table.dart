@@ -12,8 +12,6 @@ const _playerColors = [
   Color(0xFF4DB6AC),
 ];
 
-const _classNames = ['Warrior', 'Scout', 'Mage', 'Priest', 'Chanter', 'Templar'];
-
 class PartyTable extends StatelessWidget {
   final DpsSnapshot snapshot;
   const PartyTable({super.key, required this.snapshot});
@@ -32,7 +30,6 @@ class PartyTable extends StatelessWidget {
           player: e.value,
           maxDamage: maxDmg,
           color: _playerColors[e.key % _playerColors.length],
-          className: _classNames[e.value.id % _classNames.length],
         )),
         if (players.isEmpty)
           const Padding(
@@ -82,10 +79,9 @@ class _PlayerRow extends StatelessWidget {
   final PlayerStats player;
   final int maxDamage;
   final Color color;
-  final String className;
   const _PlayerRow({
     required this.rank, required this.player,
-    required this.maxDamage, required this.color, required this.className,
+    required this.maxDamage, required this.color,
   });
 
   @override
@@ -132,7 +128,7 @@ class _PlayerRow extends StatelessWidget {
                   color: color.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(3),
                 ),
-                child: Text(className, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: color)),
+                child: Text(player.className.isEmpty ? '?' : player.className, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: color)),
               ),
             ])),
             Expanded(flex: 2, child: Text(

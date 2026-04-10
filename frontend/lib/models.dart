@@ -3,6 +3,7 @@
 class PlayerStats {
   final int id;
   final String name;
+  final String className;
   final int totalDamage;
   final int totalHeal;
   final int totalHits;
@@ -16,6 +17,7 @@ class PlayerStats {
   const PlayerStats({
     required this.id,
     required this.name,
+    required this.className,
     required this.totalDamage,
     required this.totalHeal,
     required this.totalHits,
@@ -31,6 +33,7 @@ class PlayerStats {
     return PlayerStats(
       id:           json['id']            as int,
       name:         json['name']          as String,
+      className:    (json['class_name']    as String?) ?? '',
       totalDamage:  json['total_damage']  as int,
       totalHeal:    json['total_heal']    as int,
       totalHits:    json['total_hits']    as int,

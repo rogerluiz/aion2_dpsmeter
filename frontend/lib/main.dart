@@ -39,9 +39,9 @@ void main() async {
     await windowManager.show();
   });
 
-  // Inicia o backend Python automaticamente
-  final backendService = BackendService();
-  await backendService.start(useMock: true); // Mude para false quando testar com o jogo
+  // Backend Node.js rodando separado — não iniciar o backend Python
+  // final backendService = BackendService();
+  // await backendService.start(useMock: true);
 
   runApp(
     ChangeNotifierProvider(
