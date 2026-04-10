@@ -83,15 +83,35 @@ flutter build windows --release
 
 O parser foi implementado baseado em projetos open-source existentes:
 
-- [nousx/aion2-dps-meter](https://github.com/nousx/aion2-dps-meter) (Kotlin)
+- [nousx/aion2-dps-meter](https://github.com/nousx/aion2-dps-meter) (Kotlin - 391 skills)
 - [Kuroukihime/AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (C#)
+- [TK-open-public/Aion2-Dps-Meter](https://github.com/tk-open-public/aion2-dps-meter) (TypeScript/Kotlin)
 
 ### ✨ Características
 
 ✅ **Auto-detecção de porta** via magic bytes  
 ✅ **Parser VarInt** (Protocol Buffers)  
-✅ **Opcodes confirmados:** Dano direto (0x04 0x38), DoT (0x05 0x38)  
-✅ **Special flags:** Crítico, Back Attack, Perfect, Double, Parry
+✅ **Opcodes confirmados:** Dano direto (0x04 0x38), DoT (0x05 0x38), Nickname (0x04 0x8D)  
+✅ **Special flags:** Crítico, Back Attack, Perfect, Double, Parry  
+✅ **Skill enrichment:** Nomes de skills, detecção automática de classe, cache de nicknames  
+✅ **90 skills validadas** do AION 2 TW
+
+### 🎯 Skill Code Ranges (AION 2)
+
+Os skill codes no AION 2 seguem o padrão XXYYZZZZ (8 dígitos), onde XX é o ID da classe:
+
+| Range | Classe | Nome KR | Exemplos |
+|-------|--------|---------|----------|
+| **11M** | Gladiator | 검성 | 11_020_000 (Keen Strike), 11_250_000 (Zikel's Blessing) |
+| **12M** | Templar | 수호성 | 12_010_000 (Vicious Strike), 12_780_000 (Fury) |
+| **13M** | Assassin | 살성 | 13_010_000 (Quick Slice), 13_350_000 (Heart Gore) |
+| **14M** | Ranger | 궁성 | 14_020_000 (Snipe), 14_310_000 (Rapid Scattershot) |
+| **15M** | Sorcerer | 마도성 | 15_210_000 (Flame Arrow), 15_320_000 (Delayed Explosion) |
+| **16M** | Elementalist | 정령성 | 16_010_000 (Cold Shock), 16_370_000 (Fire Blessing) |
+| **17M** | Cleric | 치유성 | 17_010_000 (Earth's Retribution), 17_420_000 (Yustiel's Power) |
+| **18M** | Chanter | 호법성 | 18_010_000 (Wave Strike), 18_780_000 (Earth's Promise) |
+
+**Nota:** Estes ranges foram validados contra 3 projetos open-source do AION 2 e substituem os códigos do AION 1 (que começavam em 10M).
 
 ### 📖 Documentação Detalhada
 
