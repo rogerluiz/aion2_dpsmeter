@@ -57,11 +57,10 @@ class _TableHeader extends StatelessWidget {
     padding: EdgeInsets.fromLTRB(10, 5, 10, 5),
     child: Row(children: [
       SizedBox(width: 20),
-      Expanded(flex: 3, child: _H('Jogador')),
+      Expanded(flex: 4, child: _H('Jogador')),
       Expanded(flex: 2, child: _H('DPS', right: true)),
       Expanded(flex: 2, child: _H('Dano', right: true)),
-      Expanded(flex: 1, child: _H('Crit%', right: true)),
-      Expanded(flex: 2, child: _H('Max hit', right: true)),
+      SizedBox(width: 22),
     ]),
   );
 }
@@ -93,7 +92,6 @@ class _PlayerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = maxDamage > 0 ? player.totalDamage / maxDamage : 0.0;
-    final critHot = player.critRate > 20;
     return Container(
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Color(0x0AFFFFFF), width: 0.5)),
@@ -101,70 +99,63 @@ class _PlayerRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Stack(children: [
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: pct.clamp(0.0, 1.0),
-              child: Container(color: color.withOpacity(0.09)),
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: pct.clamp(0.0, 1.0),
+                child: Container(color: color.withOpacity(0.09)),
+              ),
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Row(children: [
-            SizedBox(
-              width: 16,
-              child: Text('$rank', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: color)),
-            ),
-            const SizedBox(width: 4),
-            Expanded(flex: 3, child: Row(children: [
-              Container(
-                width: 3, height: 14,
-                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(children: [
+              SizedBox(
+                width: 16,
+                child: Text('$rank', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: color)),
               ),
-              const SizedBox(width: 5),
-              Flexible(child: Text(
-                player.name,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xE6FFFFFF)),
-                overflow: TextOverflow.ellipsis,
-              )),
               const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(3),
+              Expanded(flex: 4, child: Row(children: [
+                Container(
+                  width: 3, height: 14,
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
                 ),
-                child: Text(player.className.isEmpty ? '?' : player.className, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: color)),
-              ),
-            ])),
-            Expanded(flex: 2, child: Text(
-              player.formattedDps, textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color),
-            )),
-            Expanded(flex: 2, child: Text(
-              player.formattedDamage, textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 11, color: Color(0x8CFFFFFF)),
-            )),
-            Expanded(flex: 1, child: Text(
-              '${player.critRate.toStringAsFixed(0)}%', textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 11, color: critHot ? const Color(0xFFFFB74D) : const Color(0x66FFFFFF)),
-            )),
-            Expanded(flex: 2, child: Text(
-              _fmt(player.maxHit), textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 11, color: Color(0x66FFFFFF)),
-            )),
-          ]),
-        ),
-      ]),
+                const SizedBox(width: 6),
+                Flexible(child: Text(
+                  player.name,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xE6FFFFFF)),
+                  overflow: TextOverflow.ellipsis,
+                )),
+                const SizedBox(width: 5),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    player.className.isEmpty ? '?' : player.className,
+                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.w500, color: color),
+                  ),
+                ),
+              ])),
+              Expanded(flex: 2, child: Text(
+                player.formattedDps, textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color),
+              )),
+              Expanded(flex: 2, child: Text(
+                player.formattedDamage, textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 11, color: Color(0x8CFFFFFF)),
+              )),
+              const SizedBox(width: 6),
+              onTap != null
+                  ? Text('›', style: TextStyle(fontSize: 14, color: color.withOpacity(0.4)))
+                  : const SizedBox(width: 10),
+            ]),
+          ),
+        ]),
       ),
     );
-  }
-
-  String _fmt(int v) {
-    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(2)}M';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
-    return v.toString();
   }
 }

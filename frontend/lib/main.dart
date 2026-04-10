@@ -80,9 +80,14 @@ class _MeterWindowState extends State<MeterWindow> {
       _detailPlayer = player;
       _detailColorIndex = colorIndex;
     });
+    windowManager.setSize(const Size(920, 680));
+    windowManager.setResizable(true);
   }
 
-  void _closeDetail() => setState(() => _detailPlayer = null);
+  void _closeDetail() {
+    setState(() => _detailPlayer = null);
+    windowManager.setSize(const Size(500, 440));
+  }
 
   @override
   Widget build(BuildContext context) {
