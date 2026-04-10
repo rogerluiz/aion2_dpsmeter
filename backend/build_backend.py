@@ -26,7 +26,7 @@ def build_backend():
     if build_dir.exists():
         shutil.rmtree(build_dir)
 
-    print("🔨 Compilando backend Python com PyInstaller...")
+    print("[BUILD] Compilando backend Python com PyInstaller...")
 
     PyInstaller.__main__.run([
         str(backend_dir / "main.py"),
@@ -49,11 +49,11 @@ def build_backend():
     backend_exe = dist_dir / "aion2_backend.exe"
 
     if backend_exe.exists():
-        print(f"✅ Backend compilado: {backend_exe}")
-        print(f"   Tamanho: {backend_exe.stat().st_size / 1024 / 1024:.1f} MB")
+        print(f"[SUCCESS] Backend compilado: {backend_exe}")
+        print(f"          Tamanho: {backend_exe.stat().st_size / 1024 / 1024:.1f} MB")
         return True
     else:
-        print("❌ Erro ao compilar backend")
+        print("[ERROR] Erro ao compilar backend")
         return False
 
 
