@@ -34,22 +34,23 @@ jobs:
       - name: Test imports
         run: |
           cd backend
-          python -c "from packet_parser import PacketParser; from calculator import DPSCalculator; from capture import MockCapture; from job_detector import JobDetector; from skill_lookup import SkillLookup; from nickname_cache import NicknameCache; print('✅ All imports successful')"
+          python -c "from packet_parser import PacketParser; from calculator import DPSCalculator; from capture import MockCapture; from job_detector import detect_job_from_skill, is_player_skill; from skill_lookup import SkillLookup; from nickname_cache import NicknameCache; print('[SUCCESS] All imports successful')"
       
       - name: Test packet parser
         run: |
           cd backend
-          python -c "from packet_parser import PacketParser; parser = PacketParser(use_mock_format=True); print('✅ PacketParser initialized')"
+          python -c "from packet_parser import PacketParser; parser = PacketParser(use_mock_format=True); print('[SUCCESS] PacketParser initialized')"
       
       - name: Test DPS calculator
         run: |
           cd backend
-          python -c "from calculator import DPSCalculator; calc = DPSCalculator(); print('✅ DPSCalculator initialized')"
+          python -c "from calculator import DPSCalculator; calc = DPSCalculator(); print('[SUCCESS] DPSCalculator initialized')"
       
       - name: Test enrichment modules
         run: |
           cd backend
-          python -c "from job_detector import JobDetector; from skill_lookup import SkillLookup; detector = JobDetector(); lookup = SkillLookup(); print(f'✅ Enrichment ready: {len(lookup.skills)} skills loaded')"
+          python -c "from job_detector import detect_job_from_skill, JobClass; from skill_lookup import SkillLookup; lookup = SkillLookup(); job = detect_job_from_skill(11_020_000); print(f'[SUCCESS] Enrichment ready: {len(lookup.skills)} skills loaded, job detection works: {job.class_name if job else \"None\"}')"
+
   
   test-build-backend:
     name: Test Backend Build
