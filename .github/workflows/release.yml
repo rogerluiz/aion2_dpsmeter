@@ -1,0 +1,214 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Dispara em tags como v1.0.0, v1.2.3, etc
+  workflow_dispatch:  # Permite executar manualmente
+
+env:
+  PYTHON_VERSION: '3.13'
+  FLUTTER_VERSION: '3.9.2'
+
+jobs:
+  build-windows:
+    name: Build Windows Release
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Necessário para tags
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+      
+      - name: Build Python backend
+        run: |
+          cd backend
+          python build_backend.py
+          echo "Backend compiled successfully"
+          dir dist
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          flutter doctor -v
+      
+      - name: Get Flutter dependencies
+        run: |
+          cd frontend
+          flutter pub get
+      
+      - name: Copy backend to Flutter assets
+        run: |
+          New-Item -Path frontend/assets/backend -ItemType Directory -Force
+          Copy-Item backend/dist/backend.exe frontend/assets/backend/backend.exe
+          echo "Backend copied to assets"
+      
+      - name: Build Flutter Windows Release
+        run: |
+          cd frontend
+          flutter build windows --release
+          echo "Flutter build completed"
+      
+      - name: Create distribution package
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          $DIST_DIR = "aion2_dpsmeter-$VERSION-windows-x64"
+          
+          # Criar estrutura de diretórios
+          New-Item -Path $DIST_DIR -ItemType Directory -Force
+          
+          # Copiar executável Flutter e DLLs
+          Copy-Item -Recurse frontend/build/windows/x64/runner/Release/* $DIST_DIR/
+          
+          # Criar README para o release
+          @"
+          # AION 2 DPS Meter - $VERSION
+          
+          ## Instalação
+          
+          1. **Instale o Npcap** (obrigatório para captura de pacotes):
+             - Download: https://npcap.com/#download
+             - Marque a opção "WinPcap API-compatible Mode" durante instalação
+          
+          2. **Execute como Administrador**:
+             - Clique com botão direito em aion2_dpsmeter.exe
+             - Selecione "Executar como administrador"
+          
+          ## Requisitos
+          
+          - Windows 10/11 (64-bit)
+          - Npcap instalado
+          - Privilégios de Administrador (para captura de pacotes)
+          
+          ## Uso
+          
+          1. Execute o aplicativo como administrador
+          2. Inicie o AION 2 TW
+          3. O backend detectará automaticamente a porta do jogo
+          4. Entre em combate para ver estatísticas em tempo real
+          
+          ## Features
+          
+          ✅ Captura automática de pacotes AION 2 TW
+          ✅ DPS/HPS em tempo real
+          ✅ Detecção automática de classe (8 classes)
+          ✅ 90 skills validadas com nomes
+          ✅ Estatísticas de combate (crit rate, back attack, perfect, double, parry)
+          ✅ Interface Flutter moderna e fluída
+          ✅ WebSocket interno (backend Python integrado)
+          
+          ## Troubleshooting
+          
+          **Backend não inicia:**
+          - Verifique se o Npcap está instalado
+          - Execute como Administrador
+          - Verifique antivírus/firewall
+          
+          **Porta não detectada:**
+          - Certifique-se que o AION 2 está rodando
+          - Entre em uma zona de combate
+          - Verifique logs em %TEMP%\aion2_dpsmeter.log
+          
+          ## Código Fonte
+          
+          https://github.com/rogerluiz/aion2_dpsmeter
+          
+          ## Licença
+          
+          MIT License - Livre para uso pessoal e comercial
+          "@ | Out-File -FilePath "$DIST_DIR/README.txt" -Encoding UTF8
+          
+          # Comprimir em ZIP
+          Compress-Archive -Path $DIST_DIR -DestinationPath "$DIST_DIR.zip" -Force
+          
+          echo "Package created: $DIST_DIR.zip"
+          dir *.zip
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          
+          # Tentar obter últimas tags
+          $PREV_TAG = git describe --abbrev=0 --tags HEAD^ 2>$null
+          
+          if ($PREV_TAG) {
+            $CHANGES = git log --pretty=format:"- %s" "$PREV_TAG..HEAD"
+          } else {
+            $CHANGES = git log --pretty=format:"- %s" HEAD~10..HEAD
+          }
+          
+          $CHANGELOG = @"
+          ## 🚀 Release $VERSION
+          
+          ### What's Changed
+          
+          $CHANGES
+          
+          ### 📦 Downloads
+          
+          - **Windows 64-bit**: aion2_dpsmeter-$VERSION-windows-x64.zip
+          
+          ### 📋 Requirements
+          
+          - Windows 10/11 (64-bit)
+          - [Npcap](https://npcap.com/#download) (instale com "WinPcap API-compatible Mode")
+          - Run as Administrator
+          
+          ### ✨ Features
+          
+          - 🎯 Real-time DPS/HPS tracking
+          - 🔍 Auto-detect AION 2 TW game port
+          - 💪 8 classes supported with 90+ validated skills
+          - 📊 Combat statistics (crit, back attack, perfect, double, parry)
+          - 🎨 Modern Flutter UI with transparency
+          - 🔧 Single executable with embedded Python backend
+          
+          ---
+          
+          **Full Changelog**: https://github.com/rogerluiz/aion2_dpsmeter/compare/$PREV_TAG...$VERSION
+          "@ 
+          
+          # Salvar changelog em arquivo para upload
+          $CHANGELOG | Out-File -FilePath changelog.md -Encoding UTF8
+          
+          echo "Changelog generated"
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: changelog.md
+          files: |
+            aion2_dpsmeter-*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aion2_dpsmeter-${{ github.ref_name }}-windows-x64
+          path: aion2_dpsmeter-*.zip
+          retention-days: 30

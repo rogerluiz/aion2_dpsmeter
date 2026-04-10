@@ -2,10 +2,11 @@
 
 ## 🎯 Fontes de Referência
 
-Baseado em análise de dois projetos open-source:
+Baseado em análise de três projetos open-source:
 
-- [nousx/aion2-dps-meter](https://github.com/nousx/aion2-dps-meter) (Kotlin)
+- [nousx/aion2-dps-meter](https://github.com/nousx/aion2-dps-meter) (Kotlin - 391 skills)
 - [Kuroukihime/AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (C#)
+- [TK-open-public/Aion2-Dps-Meter](https://github.com/tk-open-public/aion2-dps-meter) (TypeScript/Kotlin)
 
 ---
 
@@ -261,12 +262,95 @@ logger.info(f"Skill: {skill_id}, Damage: {damage}, Actor: {actor_id}")
 
 ---
 
-## 🙏 Créditos
+## � CI/CD e Automação
+
+### GitHub Actions Workflows
+
+#### 1. **CI - Build and Test** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+
+**Trigger:** Push/PR para `main` ou `develop`
+
+**Jobs:**
+- **test-backend**: Valida imports e dependências Python
+- **test-build-backend**: Compila backend com PyInstaller (validação)
+- **test-flutter**: `flutter analyze` + `flutter test` + build Windows
+
+**Objetivo:** Garantir qualidade do código antes de merge.
+
+#### 2. **Build and Release** ([`.github/workflows/release.yml`](.github/workflows/release.yml))
+
+**Trigger:** Push de tag `v*.*.*` (ex: `v1.0.0`)
+
+**Pipeline:**
+```
+1. Setup Python 3.13 + dependencies
+   ↓
+2. Build backend com PyInstaller (backend.exe)
+   ↓
+3. Setup Flutter 3.9.2
+   ↓
+4. Build Flutter Windows (release mode)
+   ↓
+5. Criar pacote ZIP de distribuição
+   ↓
+6. Gerar changelog automático (git commits)
+   ↓
+7. Criar GitHub Release + upload de artefatos
+```
+
+**Artefato gerado:**
+```
+aion2_dpsmeter-v1.0.0-windows-x64.zip
+├── aion2_dpsmeter.exe (Flutter app)
+├── flutter_windows.dll
+├── data/flutter_assets/assets/backend/backend.exe
+└── README.txt (instruções de instalação)
+```
+
+**Tamanho:** ~40-50 MB comprimido
+
+### Como Criar uma Release
+
+```bash
+# 1. Commit das mudanças
+git add .
+git commit -m "feat: nova funcionalidade X"
+
+# 2. Criar tag de versão
+git tag -a v1.0.0 -m "Release 1.0.0 - Initial public release"
+
+# 3. Push da tag (dispara workflow automaticamente)
+git push origin v1.0.0
+
+# GitHub Actions irá:
+# - Compilar tudo
+# - Criar a release
+# - Anexar os binários
+```
+
+### Versionamento
+
+Usamos **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
+
+- **MAJOR**: Mudanças incompatíveis na API (ex: v2.0.0)
+- **MINOR**: Novas funcionalidades compatíveis (ex: v1.1.0)
+- **PATCH**: Bug fixes (ex: v1.0.1)
+
+**Exemplos:**
+- `v1.0.0` - Release inicial
+- `v1.1.0` - Adicionado suporte a opcodes 0x04 0x8D
+- `v1.1.1` - Corrigido bug de parsing de VarInt
+- `v2.0.0` - Mudança no formato WebSocket (breaking change)
+
+---
+
+## �🙏 Créditos
 
 Baseado no trabalho de:
 
-- **nousx** - [aion2-dps-meter](https://github.com/nousx/aion2-dps-meter)
-- **Kuroukihime** - [AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter)
+- **nousx** - [aion2-dps-meter](https://github.com/nousx/aion2-dps-meter) (Kotlin)
+- **Kuroukihime** - [AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (C#)
+- **TK-open-public** - [Aion2-Dps-Meter](https://github.com/tk-open-public/aion2-dps-meter) (TypeScript/Kotlin)
 
 Implementação adaptada para Python + Flutter com melhorias:
 

@@ -100,16 +100,16 @@ O parser foi implementado baseado em projetos open-source existentes:
 
 Os skill codes no AION 2 seguem o padrão XXYYZZZZ (8 dígitos), onde XX é o ID da classe:
 
-| Range | Classe | Nome KR | Exemplos |
-|-------|--------|---------|----------|
-| **11M** | Gladiator | 검성 | 11_020_000 (Keen Strike), 11_250_000 (Zikel's Blessing) |
-| **12M** | Templar | 수호성 | 12_010_000 (Vicious Strike), 12_780_000 (Fury) |
-| **13M** | Assassin | 살성 | 13_010_000 (Quick Slice), 13_350_000 (Heart Gore) |
-| **14M** | Ranger | 궁성 | 14_020_000 (Snipe), 14_310_000 (Rapid Scattershot) |
-| **15M** | Sorcerer | 마도성 | 15_210_000 (Flame Arrow), 15_320_000 (Delayed Explosion) |
-| **16M** | Elementalist | 정령성 | 16_010_000 (Cold Shock), 16_370_000 (Fire Blessing) |
-| **17M** | Cleric | 치유성 | 17_010_000 (Earth's Retribution), 17_420_000 (Yustiel's Power) |
-| **18M** | Chanter | 호법성 | 18_010_000 (Wave Strike), 18_780_000 (Earth's Promise) |
+| Range   | Classe       | Nome KR | Exemplos                                                       |
+| ------- | ------------ | ------- | -------------------------------------------------------------- |
+| **11M** | Gladiator    | 검성    | 11_020_000 (Keen Strike), 11_250_000 (Zikel's Blessing)        |
+| **12M** | Templar      | 수호성  | 12_010_000 (Vicious Strike), 12_780_000 (Fury)                 |
+| **13M** | Assassin     | 살성    | 13_010_000 (Quick Slice), 13_350_000 (Heart Gore)              |
+| **14M** | Ranger       | 궁성    | 14_020_000 (Snipe), 14_310_000 (Rapid Scattershot)             |
+| **15M** | Sorcerer     | 마도성  | 15_210_000 (Flame Arrow), 15_320_000 (Delayed Explosion)       |
+| **16M** | Elementalist | 정령성  | 16_010_000 (Cold Shock), 16_370_000 (Fire Blessing)            |
+| **17M** | Cleric       | 치유성  | 17_010_000 (Earth's Retribution), 17_420_000 (Yustiel's Power) |
+| **18M** | Chanter      | 호법성  | 18_010_000 (Wave Strike), 18_780_000 (Earth's Promise)         |
 
 **Nota:** Estes ranges foram validados contra 3 projetos open-source do AION 2 e substituem os códigos do AION 1 (que começavam em 10M).
 
@@ -277,6 +277,122 @@ Copie toda a pasta `dist/` para o computador de destino. O backend Python está 
 - **Release**: Executável único que inicia backend automaticamente
   - Execute: `frontend.exe` (na pasta `dist/`)
   - Backend é extraído e iniciado nos bastidores
+
+---
+
+## 🚀 CI/CD e Releases Automáticas
+
+### GitHub Actions
+
+O projeto possui 2 workflows configurados:
+
+#### 1. **CI - Build and Test** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+
+Executa automaticamente em:
+
+- Push para `main` ou `develop`
+- Pull requests
+- Manualmente via workflow_dispatch
+
+**O que faz:**
+
+- ✅ Testa imports do Python backend
+- ✅ Compila backend com PyInstaller
+- ✅ Valida código Flutter com `flutter analyze`
+- ✅ Executa testes do Flutter
+- ✅ Faz build completo Windows em modo dry-run
+
+#### 2. **Build and Release** ([`.github/workflows/release.yml`](.github/workflows/release.yml))
+
+Executa automaticamente em:
+
+- Push de tags `v*.*.*` (ex: `v1.0.0`)
+- Manualmente via workflow_dispatch
+
+**O que faz:**
+
+- ✅ Compila backend Python com PyInstaller
+- ✅ Compila frontend Flutter para Windows
+- ✅ Cria pacote ZIP de distribuição
+- ✅ Gera changelog automático
+- ✅ Cria GitHub Release com binários anexados
+- ✅ Upload de artefatos com retenção de 30 dias
+
+### Como Criar uma Release
+
+#### Método 1: Via Tag (Recomendado)
+
+```powershell
+# 1. Atualizar versão no código (se necessário)
+# 2. Commit das mudanças
+git add .
+git commit -m "chore: bump version to 1.0.0"
+
+# 3. Criar e enviar tag
+git tag -a v1.0.0 -m "Release 1.0.0 - Descrição das mudanças"
+git push origin v1.0.0
+
+# O GitHub Actions irá automaticamente:
+# - Compilar o projeto
+# - Criar a release
+# - Anexar os binários
+```
+
+#### Método 2: Via Interface GitHub
+
+1. Acesse: https://github.com/rogerluiz/aion2_dpsmeter/releases/new
+2. Clique em "Choose a tag" → Digite `v1.0.0` → "Create new tag on publish"
+3. Preencha título: "Release 1.0.0"
+4. Preencha descrição das mudanças
+5. Clique em "Publish release"
+
+O workflow será disparado automaticamente e os binários serão anexados à release.
+
+#### Método 3: Execução Manual do Workflow
+
+1. Acesse: https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/release.yml
+2. Clique em "Run workflow"
+3. Selecione o branch
+4. Clique em "Run workflow"
+
+### Versionamento Semântico
+
+Usamos [Semantic Versioning](https://semver.org/):
+
+- **MAJOR** (v**1**.0.0): Mudanças incompatíveis na API
+- **MINOR** (v1.**1**.0): Novas funcionalidades compatíveis
+- **PATCH** (v1.0.**1**): Bug fixes
+
+**Exemplos:**
+
+- `v1.0.0` - Release inicial
+- `v1.1.0` - Adicionado suporte a novos opcodes
+- `v1.1.1` - Corrigido bug de parsing
+- `v2.0.0` - Mudança no formato de dados WebSocket
+
+### Artefatos da Release
+
+Cada release contém:
+
+```
+aion2_dpsmeter-v1.0.0-windows-x64.zip
+├── aion2_dpsmeter.exe          # Executável principal Flutter
+├── flutter_windows.dll         # DLLs do Flutter
+├── data/                       # Assets compilados
+│   └── flutter_assets/
+│       └── assets/
+│           └── backend/
+│               └── backend.exe # Backend Python embutido
+└── README.txt                  # Instruções de instalação
+```
+
+**Tamanho aproximado:** 40-50 MB (comprimido)
+
+### Status dos Builds
+
+[![CI - Build and Test](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/ci.yml/badge.svg)](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/ci.yml)
+
+[![Release](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/release.yml/badge.svg)](https://github.com/rogerluiz/aion2_dpsmeter/actions/workflows/release.yml)
 
 ---
 

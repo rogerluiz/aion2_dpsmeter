@@ -1,0 +1,116 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.13'
+  FLUTTER_VERSION: '3.9.2'
+
+jobs:
+  test-backend:
+    name: Test Python Backend
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Python tests
+        run: |
+          cd backend
+          python -m pytest test_*.py -v --cov=. --cov-report=term
+      
+      - name: Test direct import
+        run: |
+          cd backend
+          python -c "from packet_parser import PacketParser; from calculator import DPSCalculator; print('✅ Imports OK')"
+  
+  test-build-backend:
+    name: Test Backend Build
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+      
+      - name: Build backend
+        run: |
+          cd backend
+          python build_backend.py
+          echo "✅ Backend build successful"
+      
+      - name: Verify executable
+        run: |
+          cd backend/dist
+          if (Test-Path backend.exe) {
+            $size = (Get-Item backend.exe).Length / 1MB
+            echo "✅ backend.exe created ($([math]::Round($size, 2)) MB)"
+          } else {
+            echo "❌ backend.exe not found"
+            exit 1
+          }
+  
+  test-flutter:
+    name: Test Flutter Build
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+      
+      - name: Get dependencies
+        run: |
+          cd frontend
+          flutter pub get
+      
+      - name: Analyze code
+        run: |
+          cd frontend
+          flutter analyze
+      
+      - name: Run tests
+        run: |
+          cd frontend
+          flutter test
+      
+      - name: Build Windows (dry run)
+        run: |
+          cd frontend
+          flutter build windows --release --verbose
+          echo "✅ Flutter Windows build successful"
