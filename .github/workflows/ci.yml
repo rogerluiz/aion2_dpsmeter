@@ -9,7 +9,7 @@ on:
 
 env:
   PYTHON_VERSION: '3.13'
-  FLUTTER_VERSION: '3.9.2'
+  FLUTTER_CHANNEL: 'stable'
 
 jobs:
   test-backend:
@@ -90,8 +90,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: 'stable'
+          channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
       
       - name: Get dependencies
