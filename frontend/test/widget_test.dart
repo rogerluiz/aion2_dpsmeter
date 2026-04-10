@@ -29,12 +29,24 @@ void main() {
   test('WsService initializes correctly', () {
     final service = WsService();
     expect(service, isNotNull);
-    expect(service.state, isNotNull);
+    expect(service.status, isNotNull);
   });
 
   test('PlayerStats model initializes', () {
-    final stats = PlayerStats();
+    final stats = PlayerStats(
+      id: 1,
+      name: 'Test',
+      totalDamage: 0,
+      totalHeal: 0,
+      totalHits: 0,
+      totalCrits: 0,
+      totalMisses: 0,
+      currentDps: 0,
+      currentHps: 0,
+      maxHit: 0,
+      critRate: 0,
+    );
     expect(stats.totalDamage, 0);
-    expect(stats.dps, 0);
+    expect(stats.currentDps, 0);
   });
 }
