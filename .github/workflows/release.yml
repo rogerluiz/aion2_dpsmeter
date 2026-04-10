@@ -59,8 +59,14 @@ jobs:
       - name: Copy backend to Flutter assets
         run: |
           New-Item -Path frontend/assets/backend -ItemType Directory -Force
-          Copy-Item backend/dist/backend.exe frontend/assets/backend/backend.exe
+          Copy-Item backend/dist/aion2_backend.exe frontend/assets/backend/aion2_backend.exe
           echo "Backend copied to assets"
+      
+      - name: Enable assets in pubspec.yaml
+        run: |
+          cd frontend
+          (Get-Content pubspec.yaml) -replace '  # assets:', '  assets:' -replace '  #   - assets/backend/', '    - assets/backend/' | Set-Content pubspec.yaml
+          echo "Assets section enabled in pubspec.yaml"
       
       - name: Build Flutter Windows Release
         run: |
