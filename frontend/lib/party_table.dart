@@ -14,7 +14,8 @@ const _playerColors = [
 
 class PartyTable extends StatelessWidget {
   final DpsSnapshot snapshot;
-  const PartyTable({super.key, required this.snapshot});
+  final void Function(PlayerStats player, int colorIndex)? onPlayerTap;
+  const PartyTable({super.key, required this.snapshot, this.onPlayerTap});
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +31,9 @@ class PartyTable extends StatelessWidget {
           player: e.value,
           maxDamage: maxDmg,
           color: _playerColors[e.key % _playerColors.length],
+          onTap: onPlayerTap != null
+              ? () => onPlayerTap!(e.value, e.key)
+              : null,
         )),
         if (players.isEmpty)
           const Padding(
@@ -79,9 +83,11 @@ class _PlayerRow extends StatelessWidget {
   final PlayerStats player;
   final int maxDamage;
   final Color color;
+  final VoidCallback? onTap;
   const _PlayerRow({
     required this.rank, required this.player,
     required this.maxDamage, required this.color,
+    this.onTap,
   });
 
   @override
@@ -92,7 +98,9 @@ class _PlayerRow extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: Color(0x0AFFFFFF), width: 0.5)),
       ),
-      child: Stack(children: [
+      child: InkWell(
+        onTap: onTap,
+        child: Stack(children: [
         Positioned.fill(
           child: Align(
             alignment: Alignment.centerLeft,
@@ -150,6 +158,7 @@ class _PlayerRow extends StatelessWidget {
           ]),
         ),
       ]),
+      ),
     );
   }
 

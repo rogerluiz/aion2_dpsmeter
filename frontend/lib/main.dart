@@ -9,6 +9,7 @@ import 'models.dart';
 import 'party_table.dart';
 import 'dps_chart.dart';
 import 'backend_service.dart';
+import 'player_detail.dart';
 
 // ─── Paleta (espelha o mockup) ────────────────────────────────────────────────
 const kBg         = Color(0xFF0C0D0F);
@@ -71,6 +72,17 @@ class MeterWindow extends StatefulWidget {
 class _MeterWindowState extends State<MeterWindow> {
   bool _showChart = true;
   double _opacity = 0.92;
+  PlayerStats? _detailPlayer;
+  int _detailColorIndex = 0;
+
+  void _openDetail(PlayerStats player, int colorIndex) {
+    setState(() {
+      _detailPlayer = player;
+      _detailColorIndex = colorIndex;
+    });
+  }
+
+  void _closeDetail() => setState(() => _detailPlayer = null);
 
   @override
   Widget build(BuildContext context) {
@@ -86,30 +98,44 @@ class _MeterWindowState extends State<MeterWindow> {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: Column(children: [
-              // Barra de título
-              _TitleBar(
-                showChart: _showChart,
-                opacity: _opacity,
-                onToggleChart: () => setState(() => _showChart = !_showChart),
-                onReset: () => context.read<WsService>().sendReset(),
-              ),
-              // Conteúdo
-              Expanded(
-                child: Consumer<WsService>(
-                  builder: (_, ws, __) => _Body(
-                    snapshot: ws.snapshot,
-                    status: ws.status,
-                    showChart: _showChart,
-                    opacity: _opacity,
-                    onOpacityChanged: (v) {
-                      setState(() => _opacity = v);
-                      windowManager.setOpacity(v);
-                    },
-                  ),
-                ),
-              ),
-            ]),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _detailPlayer != null
+                  ? KeyedSubtree(
+                      key: ValueKey(_detailPlayer!.id),
+                      child: PlayerDetailScreen(
+                        player: _detailPlayer!,
+                        colorIndex: _detailColorIndex,
+                        onBack: _closeDetail,
+                      ),
+                    )
+                  : KeyedSubtree(
+                      key: const ValueKey('main'),
+                      child: Column(children: [
+                        _TitleBar(
+                          showChart: _showChart,
+                          opacity: _opacity,
+                          onToggleChart: () => setState(() => _showChart = !_showChart),
+                          onReset: () => context.read<WsService>().sendReset(),
+                        ),
+                        Expanded(
+                          child: Consumer<WsService>(
+                            builder: (_, ws, __) => _Body(
+                              snapshot: ws.snapshot,
+                              status: ws.status,
+                              showChart: _showChart,
+                              opacity: _opacity,
+                              onOpacityChanged: (v) {
+                                setState(() => _opacity = v);
+                                windowManager.setOpacity(v);
+                              },
+                              onPlayerTap: _openDetail,
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+            ),
           ),
         ),
       ),
@@ -217,11 +243,13 @@ class _Body extends StatelessWidget {
   final bool showChart;
   final double opacity;
   final ValueChanged<double> onOpacityChanged;
+  final void Function(PlayerStats, int)? onPlayerTap;
 
   const _Body({
     required this.snapshot, required this.status,
     required this.showChart, required this.opacity,
     required this.onOpacityChanged,
+    this.onPlayerTap,
   });
 
   @override
@@ -243,7 +271,9 @@ class _Body extends StatelessWidget {
       ],
       // Tabela
       Expanded(
-        child: SingleChildScrollView(child: PartyTable(snapshot: snapshot)),
+        child: SingleChildScrollView(
+          child: PartyTable(snapshot: snapshot, onPlayerTap: onPlayerTap),
+        ),
       ),
       const Divider(height: 0.5, color: kBorderFaint),
       // Slider de opacidade

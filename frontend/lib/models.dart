@@ -1,5 +1,41 @@
 // models.dart — Modelos de dados do DPS Meter
 
+class SkillStat {
+  final int code;
+  final String name;
+  final int hits;
+  final int crits;
+  final int totalDmg;
+  final int maxDmg;
+  final double critRate;
+
+  const SkillStat({
+    required this.code,
+    required this.name,
+    required this.hits,
+    required this.crits,
+    required this.totalDmg,
+    required this.maxDmg,
+    required this.critRate,
+  });
+
+  factory SkillStat.fromJson(Map<String, dynamic> json) => SkillStat(
+    code:     json['code']      as int,
+    name:     json['name']      as String,
+    hits:     json['hits']      as int,
+    crits:    json['crits']     as int,
+    totalDmg: json['total_dmg'] as int,
+    maxDmg:   json['max_dmg']   as int,
+    critRate: (json['crit_rate'] as num).toDouble(),
+  );
+
+  String get formattedTotalDmg {
+    if (totalDmg >= 1000000) return '${(totalDmg / 1000000).toStringAsFixed(2)}M';
+    if (totalDmg >= 1000)    return '${(totalDmg / 1000).toStringAsFixed(1)}k';
+    return totalDmg.toString();
+  }
+}
+
 class PlayerStats {
   final int id;
   final String name;
@@ -9,10 +45,15 @@ class PlayerStats {
   final int totalHits;
   final int totalCrits;
   final int totalMisses;
+  final int backAttacks;
+  final int perfects;
+  final int doubles;
+  final int parries;
   final double currentDps;
   final double currentHps;
   final int maxHit;
   final double critRate;
+  final List<SkillStat> skills;
 
   const PlayerStats({
     required this.id,
@@ -23,10 +64,15 @@ class PlayerStats {
     required this.totalHits,
     required this.totalCrits,
     required this.totalMisses,
+    required this.backAttacks,
+    required this.perfects,
+    required this.doubles,
+    required this.parries,
     required this.currentDps,
     required this.currentHps,
     required this.maxHit,
     required this.critRate,
+    required this.skills,
   });
 
   factory PlayerStats.fromJson(Map<String, dynamic> json) {
@@ -39,10 +85,17 @@ class PlayerStats {
       totalHits:    json['total_hits']    as int,
       totalCrits:   json['total_crits']   as int,
       totalMisses:  json['total_misses']  as int,
+      backAttacks:  (json['back_attacks'] as int?) ?? 0,
+      perfects:     (json['perfects']     as int?) ?? 0,
+      doubles:      (json['doubles']      as int?) ?? 0,
+      parries:      (json['parries']      as int?) ?? 0,
       currentDps:   (json['current_dps'] as num).toDouble(),
       currentHps:   (json['current_hps'] as num).toDouble(),
       maxHit:       json['max_hit']       as int,
       critRate:     (json['crit_rate']    as num).toDouble(),
+      skills:       (json['skills'] as List? ?? [])
+                      .map((s) => SkillStat.fromJson(s as Map<String, dynamic>))
+                      .toList(),
     );
   }
 
@@ -56,6 +109,11 @@ class PlayerStats {
     if (totalDamage >= 1000)    return '${(totalDamage / 1000).toStringAsFixed(1)}k';
     return totalDamage.toString();
   }
+
+  double get backAttackRate => totalHits > 0 ? backAttacks / totalHits : 0;
+  double get perfectRate    => totalHits > 0 ? perfects    / totalHits : 0;
+  double get doubleRate     => totalHits > 0 ? doubles     / totalHits : 0;
+  double get parryRate      => totalHits > 0 ? parries     / totalHits : 0;
 }
 
 class DpsSnapshot {

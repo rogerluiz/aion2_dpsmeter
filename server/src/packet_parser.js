@@ -55,6 +55,11 @@ function parseDamage(pkt, oo) {
     if (dtv.length < 0) return null;
     off += dtv.length;
     const isCrit = dtv.value === 3;
+    // Special combat flags are in the first byte of the specSz block (andRes 5/6/7 only)
+    let flags = 0;
+    if (andRes >= 5 && off < pkt.length) {
+      flags = pkt[off] & 0xff;
+    }
     const specSz = {4: 8, 5: 12, 6: 10, 7: 14}[andRes];
     off += specSz;
     if (off >= pkt.length) return null;
@@ -74,6 +79,10 @@ function parseDamage(pkt, oo) {
       damage: dmg,
       isCrit,
       isDot: false,
+      isBackAttack: (flags & 0x01) !== 0,
+      isParry: (flags & 0x04) !== 0,
+      isPerfect: (flags & 0x08) !== 0,
+      isDouble: (flags & 0x10) !== 0,
     };
   } catch (_) {
     return null;
