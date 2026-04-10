@@ -76,16 +76,16 @@ jobs:
         run: |
           cd backend
           python build_backend.py
-          echo "✅ Backend build successful"
+          echo "[SUCCESS] Backend build successful"
       
       - name: Verify executable
         run: |
           cd backend/dist
-          if (Test-Path backend.exe) {
-            $size = (Get-Item backend.exe).Length / 1MB
-            echo "✅ backend.exe created ($([math]::Round($size, 2)) MB)"
+          if (Test-Path aion2_backend.exe) {
+            $size = (Get-Item aion2_backend.exe).Length / 1MB
+            echo "[SUCCESS] aion2_backend.exe created ($([math]::Round($size, 2)) MB)"
           } else {
-            echo "❌ backend.exe not found"
+            echo "[ERROR] aion2_backend.exe not found"
             exit 1
           }
   
@@ -122,4 +122,4 @@ jobs:
         run: |
           cd frontend
           flutter build windows --release --verbose
-          echo "✅ Flutter Windows build successful"
+          echo "[SUCCESS] Flutter Windows build successful"
