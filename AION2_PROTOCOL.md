@@ -271,6 +271,7 @@ logger.info(f"Skill: {skill_id}, Damage: {damage}, Actor: {actor_id}")
 **Trigger:** Push/PR para `main` ou `develop`
 
 **Jobs:**
+
 - **test-backend**: Valida imports e dependências Python
 - **test-build-backend**: Compila backend com PyInstaller (validação)
 - **test-flutter**: `flutter analyze` + `flutter test` + build Windows
@@ -282,6 +283,7 @@ logger.info(f"Skill: {skill_id}, Damage: {damage}, Actor: {actor_id}")
 **Trigger:** Push de tag `v*.*.*` (ex: `v1.0.0`)
 
 **Pipeline:**
+
 ```
 1. Setup Python 3.13 + dependencies
    ↓
@@ -299,6 +301,7 @@ logger.info(f"Skill: {skill_id}, Damage: {damage}, Actor: {actor_id}")
 ```
 
 **Artefato gerado:**
+
 ```
 aion2_dpsmeter-v1.0.0-windows-x64.zip
 ├── aion2_dpsmeter.exe (Flutter app)
@@ -337,6 +340,7 @@ Usamos **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
 - **PATCH**: Bug fixes (ex: v1.0.1)
 
 **Exemplos:**
+
 - `v1.0.0` - Release inicial
 - `v1.1.0` - Adicionado suporte a opcodes 0x04 0x8D
 - `v1.1.1` - Corrigido bug de parsing de VarInt

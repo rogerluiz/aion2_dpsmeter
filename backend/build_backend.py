@@ -50,7 +50,8 @@ def build_backend():
 
     if backend_exe.exists():
         print(f"[SUCCESS] Backend compilado: {backend_exe}")
-        print(f"          Tamanho: {backend_exe.stat().st_size / 1024 / 1024:.1f} MB")
+        print(
+            f"          Tamanho: {backend_exe.stat().st_size / 1024 / 1024:.1f} MB")
         return True
     else:
         print("[ERROR] Erro ao compilar backend")

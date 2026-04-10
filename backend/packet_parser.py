@@ -18,14 +18,17 @@ Estrutura estimada de pacote de dano (incoming, big-endian):
   0x13    ...      Restante
 """
 
+from nickname_cache import NicknameCache
+from job_detector import detect_job_from_skill, get_job_icon
+from skill_lookup import get_skill_lookup
 import struct
 import logging
 from dataclasses import dataclass
 from typing import Optional
 
-from skill_lookup import get_skill_lookup
-from job_detector import detect_job_from_skill, get_job_icon
-from nickname_cache import NicknameCache
+# Habilita logs detalhados para depuração de parsing
+logging.basicConfig(level=logging.DEBUG)
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +109,9 @@ class PacketParser:
         """
         if len(payload) < 6:
             return None
+
+        logger.debug(
+            f"Parsing payload len={len(payload)} dir={direction} head={payload[:48].hex()}")
 
         try:
             if self.use_mock_format:
@@ -233,6 +239,8 @@ class PacketParser:
 
             # Damage value (varint)
             damage, _ = self._read_varint(payload, offset)
+            logger.debug(
+                f"Parsed damage packet: actor_id={actor_id} target_id={target_id} skill_id={skill_id} damage={damage} damage_type={damage_type} flags=0x{flags_byte:02X}")
 
             event = CombatEvent(
                 event_type="damage",

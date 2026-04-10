@@ -5,9 +5,12 @@ Requer: Npcap instalado no Windows + scapy via pip
 
 import threading
 import logging
+import os
+import time
 from typing import Callable, Optional
 from scapy.all import sniff, get_if_list, conf
 from scapy.layers.inet import IP, TCP, UDP
+from scapy.utils import PcapWriter
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,13 @@ class PacketCapture:
         self.interface = interface
         self._thread: Optional[threading.Thread] = None
         self._running = False
+        self._pcap_writer: Optional[PcapWriter] = None
+        # directory to save pcaps
+        self._pcap_dir = os.path.join(os.path.dirname(__file__), 'pcaps')
+        try:
+            os.makedirs(self._pcap_dir, exist_ok=True)
+        except Exception:
+            pass
 
     def list_interfaces(self) -> list[str]:
         """Retorna lista de interfaces de rede disponíveis."""
@@ -48,10 +58,32 @@ class PacketCapture:
         logger.info(
             f"Captura iniciada na interface: {self.interface or 'auto'}")
 
+        # open pcap writer for this session
+        try:
+            safe_name = (self.interface or 'auto').replace('\\', '_').replace(
+                '/', '_').replace(':', '_').replace('{', '').replace('}', '')
+            fname = f"capture_{safe_name}_{int(time.time())}.pcap"
+            fpath = os.path.join(self._pcap_dir, fname)
+            self._pcap_writer = PcapWriter(fpath, append=False, sync=True)
+            logger.info(f"PCAP writer opened: {fpath}")
+        except Exception as e:
+            logger.debug(f"Não foi possível abrir PCAP writer: {e}")
+
     def stop(self):
         """Para a captura."""
         self._running = False
         logger.info("Captura encerrada.")
+        # close pcap writer
+        try:
+            if self._pcap_writer:
+                try:
+                    self._pcap_writer.close()
+                except Exception:
+                    pass
+                self._pcap_writer = None
+                logger.info("PCAP writer fechado.")
+        except Exception:
+            pass
 
     def _capture_loop(self):
         try:
@@ -92,6 +124,14 @@ class PacketCapture:
                 if len(payload) < MIN_PAYLOAD_SIZE:
                     return
 
+                # Log básico do pacote (debug) — mostra portas e começo do payload
+                try:
+                    logger.debug(
+                        f"Pkt sport={sport} dport={dport} len={len(payload)} magic_in={magic in payload} payload_hex={payload[:48].hex()}"
+                    )
+                except Exception:
+                    pass
+
                 # Magic bytes para detectar porta do AION 2: 0x06 0x00 0x36
                 global DETECTED_PORT, AION2_PORTS
                 magic = b'\x06\x00\x36'
@@ -100,6 +140,11 @@ class PacketCapture:
                     AION2_PORTS.add(DETECTED_PORT)
                     logger.info(
                         f"🔥 Porta de combate detectada: {DETECTED_PORT}")
+
+                # Log quando já detectamos a porta (debug)
+                if DETECTED_PORT:
+                    logger.debug(
+                        f"Using DETECTED_PORT={DETECTED_PORT}; direction={direction}")
 
                 # Determina direção
                 if DETECTED_PORT:
@@ -113,6 +158,13 @@ class PacketCapture:
                     return
 
                 self.on_packet(payload, direction)
+
+                # write full scapy packet to pcap if enabled
+                try:
+                    if self._pcap_writer is not None:
+                        self._pcap_writer.write(pkt)
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.debug(f"Erro ao processar pacote: {e}")
