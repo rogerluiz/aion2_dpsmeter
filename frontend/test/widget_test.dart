@@ -36,15 +36,21 @@ void main() {
     final stats = PlayerStats(
       id: 1,
       name: 'Test',
+      className: 'Ranger',
       totalDamage: 0,
       totalHeal: 0,
       totalHits: 0,
       totalCrits: 0,
       totalMisses: 0,
+      backAttacks: 0,
+      perfects: 0,
+      doubles: 0,
+      parries: 0,
       currentDps: 0,
       currentHps: 0,
       maxHit: 0,
       critRate: 0,
+      skills: [],
     );
     expect(stats.totalDamage, 0);
     expect(stats.currentDps, 0);

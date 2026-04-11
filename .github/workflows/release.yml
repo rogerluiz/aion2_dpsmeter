@@ -44,9 +44,8 @@ jobs:
       - name: Install Npcap
         shell: pwsh
         run: |
-          $out = "$env:TEMP\npcap.exe"
-          Invoke-WebRequest -Uri "https://npcap.com/dist/npcap-1.79.exe" -OutFile $out -UseBasicParsing
-          Start-Process -FilePath $out -ArgumentList "/S", "/winpcap_mode=yes" -Wait
+          choco install npcap --yes --no-progress --install-arguments='/S /winpcap_mode=yes'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           Write-Host "Npcap installed"
 
       - name: Setup Node.js
