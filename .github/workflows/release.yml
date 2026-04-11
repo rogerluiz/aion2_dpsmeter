@@ -135,8 +135,10 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ steps.ver.outputs.VERSION }}"
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { Write-Error "makensis not found"; exit 1 }
           Set-Location installer
-          makensis /DVERSION=$v aion2_dpsmeter.nsi
+          & $makensis /DVERSION=$v aion2_dpsmeter.nsi
           if ($LASTEXITCODE -ne 0) { Write-Error "makensis failed"; exit 1 }
           $sz = [math]::Round((Get-Item "aion2_dpsmeter-$v-setup.exe").Length/1MB,1)
           Write-Host "Installer: aion2_dpsmeter-$v-setup.exe ($sz MB)"
