@@ -14,10 +14,30 @@ let Cap, decoders;
 function loadCap() {
   if (!Cap) {
     try {
+      // Quando empacotado com pkg, o require interno de cap.node via snapshot pode
+      // falhar silenciosamente (dlopen em path temporário, ABI mismatch, etc.).
+      // Solução: remover cap.node dos assets do pkg e carregar do filesystem real,
+      // ao lado do aion2_server.exe, interceptando a resolução do require.
+      if (process.pkg) {
+        const nodePath = require('path');
+        const Module = require('module');
+        const capNodePath = nodePath.join(
+          nodePath.dirname(process.execPath),
+          'cap.node',
+        );
+        const _origResolve = Module._resolveFilename;
+        Module._resolveFilename = function (request, parent, isMain, options) {
+          if (typeof request === 'string' && request.endsWith('cap.node')) {
+            return capNodePath;
+          }
+          return _origResolve.call(this, request, parent, isMain, options);
+        };
+      }
       ({Cap, decoders} = require('cap'));
     } catch (e) {
       throw new Error(
-        'Npcap não encontrado. Instale o Npcap (https://npcap.com) e reinicie.\n' + e.message
+        'Npcap não encontrado. Instale o Npcap (https://npcap.com) e reinicie.\n' +
+          e.message,
       );
     }
   }

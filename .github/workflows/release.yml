@@ -87,7 +87,10 @@ jobs:
         run: |
           New-Item -Path frontend/assets/backend -ItemType Directory -Force | Out-Null
           Copy-Item server/dist/aion2_server.exe frontend/assets/backend/aion2_server.exe -Force
-          Write-Host "Server copied to assets/backend/"
+          # cap.node deve ficar ao lado do exe para o pkg runtime carregar do filesystem real
+          Copy-Item server/node_modules/cap/build/Release/cap.node server/dist/cap.node -Force
+          Copy-Item server/dist/cap.node frontend/assets/backend/cap.node -Force
+          Write-Host "Server + cap.node copied to assets/backend/"
 
       - name: Build Flutter Windows Release
         shell: pwsh
