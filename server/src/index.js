@@ -10,7 +10,7 @@
  *   DEBUG=1 node src/index.js               # logs detalhados de pacotes brutos
  */
 
-const PacketCapture = require('./capture');
+// PacketCapture carregado lazily — evita que require('cap') falhe no modo --mock
 const {StreamParser} = require('./packet_parser');
 const DpsCalculator = require('./calculator');
 const WsServer = require('./ws_server');
@@ -27,6 +27,7 @@ const WS_PORT = 8765;
 
 // --- Listar interfaces e sair ---
 if (listInterfaces) {
+  const PacketCapture = require('./capture');
   let devices;
   try {
     devices = PacketCapture.listInterfaces();
@@ -108,6 +109,7 @@ if (isMock) {
 
   // --- Modo REAL ---
 } else {
+  const PacketCapture = require('./capture');
   const capture = new PacketCapture();
 
   capture.on('magic', ({connKey}) => {

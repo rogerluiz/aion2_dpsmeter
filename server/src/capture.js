@@ -8,7 +8,20 @@
  */
 
 const EventEmitter = require('events');
-const {Cap, decoders} = require('cap');
+
+// 'cap' carregado lazily — evita crash ao iniciar sem Npcap instalado (ex: modo --mock)
+let Cap, decoders;
+function loadCap() {
+  if (!Cap) {
+    try {
+      ({Cap, decoders} = require('cap'));
+    } catch (e) {
+      throw new Error(
+        'Npcap não encontrado. Instale o Npcap (https://npcap.com) e reinicie.\n' + e.message
+      );
+    }
+  }
+}
 
 const MAGIC = Buffer.from([0x06, 0x00, 0x36]);
 const MIN_PAYLOAD = 5;
@@ -21,6 +34,7 @@ class PacketCapture extends EventEmitter {
   }
 
   static listInterfaces() {
+    loadCap();
     return Cap.deviceList();
   }
 
@@ -29,6 +43,7 @@ class PacketCapture extends EventEmitter {
    * @param {string|null} iface — nome do device (null = auto)
    */
   start(iface = null) {
+    loadCap();
     let device = iface;
     let isLoopback = false;
 
