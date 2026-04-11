@@ -40,7 +40,8 @@ class BackendService {
       _backendProcess = await Process.start(
         serverExe,
         args,
-        mode: ProcessStartMode.detached,
+        mode: ProcessStartMode.normal,
+        runInShell: false,
       );
       _isRunning = true;
       await Future.delayed(const Duration(seconds: 2));
@@ -94,7 +95,8 @@ class BackendService {
     _backendProcess = await Process.start(
       'node',
       [indexJs, ...extraArgs],
-      mode: ProcessStartMode.detached,
+      mode: ProcessStartMode.normal,
+      runInShell: false,
       workingDirectory: path.dirname(path.dirname(indexJs)), // server/
     );
     _isRunning = true;
