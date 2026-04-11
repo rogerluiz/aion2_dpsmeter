@@ -54,18 +54,28 @@ class WsService extends ChangeNotifier {
   }
 
   void _tryConnect() {
+    _sub?.cancel();
+    _sub = null;
+    try { _channel?.sink.close(); } catch (_) {}
+
     try {
       final uri = Uri.parse(_wsUrl);
       _channel = WebSocketChannel.connect(uri);
+
+      // Aguarda handshake real antes de marcar conectado
+      _channel!.ready.then((_) {
+        if (_status == WsStatus.connecting) {
+          _error = null;
+          _setStatus(WsStatus.connected);
+        }
+      }, onError: _onError);
+
       _sub = _channel!.stream.listen(
         _onData,
         onError: _onError,
         onDone: _onDone,
-        cancelOnError: false,
+        cancelOnError: true, // impede onError + onDone dispararem juntos
       );
-      _setStatus(WsStatus.connected);
-      _error = null;
-      notifyListeners();
     } catch (e) {
       _onError(e);
     }
@@ -89,12 +99,18 @@ class WsService extends ChangeNotifier {
   }
 
   void _onError(dynamic error) {
+    if (_status == WsStatus.disconnected) return;
     _error = error.toString();
+    _sub?.cancel();
+    _sub = null;
     _setStatus(WsStatus.disconnected);
     _scheduleReconnect();
   }
 
   void _onDone() {
+    if (_status == WsStatus.disconnected) return;
+    _sub?.cancel();
+    _sub = null;
     _setStatus(WsStatus.disconnected);
     _scheduleReconnect();
   }

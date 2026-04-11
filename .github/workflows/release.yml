@@ -101,32 +101,45 @@ jobs:
         id: dist
         shell: pwsh
         run: |
+          $v    = "${{ steps.ver.outputs.VERSION }}"
           $name = "${{ steps.ver.outputs.DIST }}"
+          $src  = "frontend/build/windows/x64/runner/Release"
+
+          # ZIP portátil
           New-Item -Path $name -ItemType Directory -Force | Out-Null
-          Copy-Item -Recurse "frontend/build/windows/x64/runner/Release/*" "$name/" -Force
+          Copy-Item -Recurse "$src/*" "$name/" -Force
 
           @(
-            "# AION 2 DPS Meter - ${{ steps.ver.outputs.VERSION }}",
+            "# AION 2 DPS Meter - $v",
             "",
             "## Requisitos",
             "- Windows 10/11 (64-bit)",
-            "- Npcap instalado: https://npcap.com/#download",
-            "  (marque 'WinPcap API-compatible Mode' na instalacao)",
+            "- Npcap: https://npcap.com/#download",
+            "  (marque 'WinPcap API-compatible Mode')",
             "- Executar como Administrador",
             "",
             "## Uso",
-            "1. Execute frontend.exe como Administrador",
+            "1. Execute aion2_dpsmeter.exe como Administrador",
             "2. Inicie o AION 2 TW",
-            "3. Entre em combate para ver DPS/HPS em tempo real",
-            "",
-            "## Troubleshooting",
-            "- Verifique se o Npcap esta instalado",
-            "- Execute como Administrador",
-            "- Verifique antivirus/firewall"
+            "3. Entre em combate para ver DPS/HPS em tempo real"
           ) | Out-File -FilePath "$name/README.txt" -Encoding UTF8
 
           Compress-Archive -Path $name -DestinationPath "$name.zip" -Force
-          Write-Host "Package: $name.zip ($([math]::Round((Get-Item "$name.zip").Length / 1MB, 1)) MB)"
+          Write-Host "ZIP: $name.zip ($([math]::Round((Get-Item "$name.zip").Length/1MB,1)) MB)"
+
+          # Pasta dist/ para o NSIS
+          New-Item -Path installer/dist -ItemType Directory -Force | Out-Null
+          Copy-Item -Recurse "$src/*" "installer/dist/" -Force
+
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.VERSION }}"
+          Set-Location installer
+          makensis /DVERSION=$v aion2_dpsmeter.nsi
+          if ($LASTEXITCODE -ne 0) { Write-Error "makensis failed"; exit 1 }
+          $sz = [math]::Round((Get-Item "aion2_dpsmeter-$v-setup.exe").Length/1MB,1)
+          Write-Host "Installer: aion2_dpsmeter-$v-setup.exe ($sz MB)"
 
       - name: Generate changelog
         shell: pwsh
@@ -153,7 +166,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: changelog.md
-          files: ${{ steps.ver.outputs.DIST }}.zip
+          files: |
+            ${{ steps.ver.outputs.DIST }}.zip
+            installer/aion2_dpsmeter-${{ steps.ver.outputs.VERSION }}-setup.exe
           draft: false
           prerelease: false
         env:
@@ -163,5 +178,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.ver.outputs.DIST }}
-          path: ${{ steps.ver.outputs.DIST }}.zip
+          path: |
+            ${{ steps.ver.outputs.DIST }}.zip
+            installer/aion2_dpsmeter-${{ steps.ver.outputs.VERSION }}-setup.exe
           retention-days: 30
