@@ -12,7 +12,7 @@ Unicode true
 
 Name "${APP_NAME} ${VERSION}"
 OutFile "aion2_dpsmeter-${VERSION}-setup.exe"
-InstallDir "$PROGRAMFILES64\AION2 DPS Meter"
+InstallDir "C:\AION2 DSPMETER"
 InstallDirRegKey HKLM "Software\AION2DPSMeter" "Install_Dir"
 RequestExecutionLevel admin
 ShowInstDetails show
