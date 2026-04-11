@@ -56,9 +56,6 @@ jobs:
           Set-Location server
           npm install --legacy-peer-deps
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          # Recompila cap.node para o ABI exato do Node.js instalado (= pkg node18 target)
-          npm rebuild cap
-          if ($LASTEXITCODE -ne 0) { Write-Warning "cap rebuild failed - bundle may have ABI mismatch" }
           Write-Host "Dependencies installed"
 
       - name: Build Node.js server with pkg
