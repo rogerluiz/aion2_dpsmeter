@@ -8,116 +8,81 @@ on:
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: '3.13'
+  NODE_VERSION: '18'
   FLUTTER_CHANNEL: 'stable'
 
 jobs:
-  test-backend:
-    name: Test Python Backend
+  test-server:
+    name: Test Node.js Server
     runs-on: windows-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-      
-      - name: Test imports
-        run: |
-          cd backend
-          python -c "from packet_parser import PacketParser; from calculator import DPSCalculator; from capture import MockCapture; from job_detector import detect_job_from_skill, is_player_skill; from skill_lookup import SkillLookup; from nickname_cache import NicknameCache; print('[SUCCESS] All imports successful')"
-      
-      - name: Test packet parser
-        run: |
-          cd backend
-          python -c "from packet_parser import PacketParser; parser = PacketParser(use_mock_format=True); print('[SUCCESS] PacketParser initialized')"
-      
-      - name: Test DPS calculator
-        run: |
-          cd backend
-          python -c "from calculator import DPSCalculator; calc = DPSCalculator(); print('[SUCCESS] DPSCalculator initialized')"
-      
-      - name: Test enrichment modules
-        run: |
-          cd backend
-          python -c "from skill_lookup import SkillLookup; lookup = SkillLookup(); print('[SUCCESS] SkillLookup loaded:', len(lookup.skills), 'skills')"
-          python -c "from job_detector import detect_job_from_skill, JobClass; job = detect_job_from_skill(11_020_000); print('[SUCCESS] Job detection works:', job.class_name if job else 'None')"
 
-  
-  test-build-backend:
-    name: Test Backend Build
-    runs-on: windows-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Install dependencies
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-          pip install pyinstaller
-      
-      - name: Build backend
+          Set-Location server
+          npm install --legacy-peer-deps
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "[SUCCESS] Server dependencies installed"
+
+      - name: Validate server modules
+        shell: pwsh
         run: |
-          cd backend
-          python build_backend.py
-          echo "[SUCCESS] Backend build successful"
-      
-      - name: Verify executable
-        run: |
-          cd backend/dist
-          if (Test-Path aion2_backend.exe) {
-            $size = (Get-Item aion2_backend.exe).Length / 1MB
-            echo "[SUCCESS] aion2_backend.exe created ($([math]::Round($size, 2)) MB)"
-          } else {
-            echo "[ERROR] aion2_backend.exe not found"
-            exit 1
-          }
-  
+          Set-Location server
+          node -e "
+            const calc   = require('./src/calculator');
+            const parser = require('./src/packet_parser');
+            const names  = require('./src/skill_names');
+            const ws     = require('./src/ws_server');
+            console.log('[SUCCESS] All server modules loaded');
+            console.log('  Skill names sample:', names.getSkillName(14010000));
+          "
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
   test-flutter:
     name: Test Flutter Build
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
-      
+
       - name: Get dependencies
+        shell: pwsh
         run: |
-          cd frontend
+          Set-Location frontend
           flutter pub get
-      
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Analyze code
+        shell: pwsh
         run: |
-          cd frontend
+          Set-Location frontend
           flutter analyze
-      
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Run tests
+        shell: pwsh
         run: |
-          cd frontend
+          Set-Location frontend
           flutter test
+
       
       - name: Build Windows (dry run)
         run: |

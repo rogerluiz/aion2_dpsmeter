@@ -75,3 +75,24 @@ coverage/
 htmlcov/
 .coverage
 .pytest_cache/
+
+
+# node
+node_modules/
+
+# Skill icon PNGs (fetched from CDN at runtime, not committed)
+frontend/assets/skills/
+
+# One-off helper scripts
+scripts/decode_codes.js
+scripts/download_icons.py
+scripts/download_skill_icons.ps1
+scripts/extract_skill_codes.py
+scripts/fetch_plaync_character.py
+scripts/translate_skills.py
+scripts/plaync_character.json
+scripts/plaync_skill_map.csv
+scripts/plaync_skill_map.json
+scripts/skills_extracted.csv
+scripts/skills_to_download.csv
+scripts/translations/

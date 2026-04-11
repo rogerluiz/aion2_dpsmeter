@@ -21,34 +21,87 @@ class BackendService {
     }
 
     try {
-      final serverExe = await _locateBackendExecutable();
+      final List<String> args = useMock ? <String>['--mock'] : <String>[];
 
+      // Dev mode: tenta rodar via 'node src/index.js' diretamente (sem compilar exe)
+      if (!kReleaseMode) {
+        final started = await _tryStartWithNode(args);
+        if (started) return true;
+      }
+
+      // Produção (ou fallback): usa o exe compilado
+      final serverExe = await _locateBackendExecutable();
       if (serverExe == null) {
         debugPrint('Servidor executável não encontrado ($_exeName)');
         return false;
       }
 
       debugPrint('Iniciando servidor: $serverExe');
-
-      final List<String> args = useMock ? <String>['--mock'] : <String>[];
-
       _backendProcess = await Process.start(
         serverExe,
         args,
         mode: ProcessStartMode.detached,
       );
-
       _isRunning = true;
-
-      // Aguarda o servidor abrir o WebSocket
       await Future.delayed(const Duration(seconds: 2));
-
-      debugPrint('Servidor iniciado com sucesso (PID: ${_backendProcess!.pid})');
+      debugPrint('Servidor iniciado (PID: ${_backendProcess!.pid})');
       return true;
     } catch (e) {
       debugPrint('Erro ao iniciar servidor: $e');
       return false;
     }
+  }
+
+  /// Tenta iniciar o servidor com `node src/index.js` para dev rápido.
+  Future<bool> _tryStartWithNode(List<String> extraArgs) async {
+    // Se já há algo ouvindo na porta 8765, reutiliza — evita stacking de processos
+    // ao fazer hot restart ou flutter run múltiplas vezes.
+    try {
+      final sock = await Socket.connect('127.0.0.1', 8765,
+          timeout: const Duration(milliseconds: 300));
+      await sock.close();
+      debugPrint('[Dev] Servidor já ativo na porta 8765, reutilizando.');
+      _isRunning = true;
+      return true;
+    } catch (_) {
+      // Porta livre — prossegue com o start
+    }
+
+    // Sobe até encontrar server/src/index.js relativo ao cwd do processo
+    final candidates = [
+      path.join(Directory.current.path, '..', 'server', 'src', 'index.js'),
+      path.join(Directory.current.path, 'server', 'src', 'index.js'),
+    ];
+
+    String? indexJs;
+    for (final c in candidates) {
+      if (await File(c).exists()) {
+        indexJs = path.normalize(c);
+        break;
+      }
+    }
+    if (indexJs == null) return false;
+
+    // Verifica se node está disponível
+    try {
+      final which = await Process.run('where', ['node']);
+      if (which.exitCode != 0) return false;
+    } catch (_) {
+      return false;
+    }
+
+    debugPrint('[Dev] Iniciando servidor via node: $indexJs');
+    _backendProcess = await Process.start(
+      'node',
+      [indexJs, ...extraArgs],
+      mode: ProcessStartMode.detached,
+      workingDirectory: path.dirname(path.dirname(indexJs)), // server/
+    );
+    _isRunning = true;
+    // node precisa de um pouco mais de tempo para JIT + bind ws
+    await Future.delayed(const Duration(seconds: 3));
+    debugPrint('[Dev] Servidor node iniciado (PID: ${_backendProcess!.pid})');
+    return true;
   }
 
   /// Para o servidor
@@ -60,42 +113,26 @@ class BackendService {
     }
   }
 
-  /// Localiza o executável do servidor Node.js
+  /// Localiza o executável do servidor Node.js (produção)
   Future<String?> _locateBackendExecutable() async {
-    // Em desenvolvimento: procura em server/dist/
     if (!kReleaseMode) {
       final devPath = path.join(
         Directory.current.path,
-        'server',
-        'dist',
-        _exeName,
+        'server', 'dist', _exeName,
       );
-
-      if (await File(devPath).exists()) {
-        return devPath;
-      }
+      if (await File(devPath).exists()) return devPath;
     }
-    
-    // Em release: procura junto ao executável do Flutter
+
     final exeDir = path.dirname(Platform.resolvedExecutable);
 
-    // Opção 1: Na pasta data/flutter_assets/assets/backend
     final assetsPath = path.join(exeDir, 'data', 'flutter_assets', 'assets', 'backend', _exeName);
-    if (await File(assetsPath).exists()) {
-      return assetsPath;
-    }
+    if (await File(assetsPath).exists()) return assetsPath;
 
-    // Opção 2: Na pasta backend/ ao lado do executável
     final bundledPath1 = path.join(exeDir, 'backend', _exeName);
-    if (await File(bundledPath1).exists()) {
-      return bundledPath1;
-    }
+    if (await File(bundledPath1).exists()) return bundledPath1;
 
-    // Opção 3: No mesmo diretório do executável
     final bundledPath2 = path.join(exeDir, _exeName);
-    if (await File(bundledPath2).exists()) {
-      return bundledPath2;
-    }
+    if (await File(bundledPath2).exists()) return bundledPath2;
 
     return null;
   }

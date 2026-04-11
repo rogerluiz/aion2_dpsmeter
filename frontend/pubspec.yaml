@@ -40,6 +40,9 @@ dependencies:
   
   # Window management
   window_manager: ^0.4.0
+
+  # Screen bounds for adaptive window placement
+  screen_retriever: ^0.2.0
   
   # WebSocket
   web_socket_channel: ^3.0.0

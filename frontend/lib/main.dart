@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 import 'ws_service.dart';
 import 'models.dart';
@@ -72,21 +73,91 @@ class MeterWindow extends StatefulWidget {
 class _MeterWindowState extends State<MeterWindow> {
   bool _showChart = true;
   double _opacity = 0.92;
-  PlayerStats? _detailPlayer;
+  int? _detailPlayerId;
   int _detailColorIndex = 0;
+  Rect? _compactBounds;
 
-  void _openDetail(PlayerStats player, int colorIndex) {
+  Future<void> _openDetail(PlayerStats player, int colorIndex) async {
     setState(() {
-      _detailPlayer = player;
+      _detailPlayerId = player.id;
       _detailColorIndex = colorIndex;
     });
-    windowManager.setSize(const Size(920, 680));
-    windowManager.setResizable(true);
+
+    final currentBounds = await windowManager.getBounds();
+    _compactBounds ??= currentBounds;
+
+    const detailSize = Size(920, 680);
+    final displays = await screenRetriever.getAllDisplays();
+    final currentCenter = currentBounds.center;
+
+    Display? activeDisplay;
+    for (final display in displays) {
+      final visibleRect = Rect.fromLTWH(
+        display.visiblePosition?.dx ?? 0,
+        display.visiblePosition?.dy ?? 0,
+        display.visibleSize?.width ?? display.size.width,
+        display.visibleSize?.height ?? display.size.height,
+      );
+      if (visibleRect.contains(currentCenter)) {
+        activeDisplay = display;
+        break;
+      }
+    }
+    activeDisplay ??= displays.isNotEmpty ? displays.first : await screenRetriever.getPrimaryDisplay();
+
+    final visibleRect = Rect.fromLTWH(
+      activeDisplay.visiblePosition?.dx ?? 0,
+      activeDisplay.visiblePosition?.dy ?? 0,
+      activeDisplay.visibleSize?.width ?? activeDisplay.size.width,
+      activeDisplay.visibleSize?.height ?? activeDisplay.size.height,
+    );
+
+    final targetWidth = detailSize.width.clamp(500.0, visibleRect.width).toDouble();
+    final targetHeight = detailSize.height.clamp(440.0, visibleRect.height).toDouble();
+    final extraWidth = targetWidth - currentBounds.width;
+    final freeLeft = currentBounds.left - visibleRect.left;
+    final freeRight = visibleRect.right - currentBounds.right;
+    final expandRight = freeRight >= extraWidth || freeRight >= freeLeft;
+
+    final targetLeft = (expandRight
+        ? currentBounds.left.clamp(
+          visibleRect.left,
+                visibleRect.right - targetWidth,
+          )
+        : (currentBounds.left - extraWidth).clamp(
+          visibleRect.left,
+                visibleRect.right - targetWidth,
+          ))
+      .toDouble();
+    final targetTop = currentBounds.top
+        .clamp(visibleRect.top, visibleRect.bottom - targetHeight)
+      .toDouble();
+
+    await windowManager.setResizable(true);
+    await windowManager.setBounds(
+      Rect.fromLTWH(targetLeft, targetTop, targetWidth, targetHeight),
+      animate: true,
+    );
   }
 
-  void _closeDetail() {
-    setState(() => _detailPlayer = null);
-    windowManager.setSize(const Size(500, 440));
+  Future<void> _closeDetail() async {
+    final compactBounds = _compactBounds;
+    setState(() => _detailPlayerId = null);
+    if (compactBounds != null) {
+      await windowManager.setBounds(compactBounds, animate: true);
+    } else {
+      await windowManager.setSize(const Size(500, 440), animate: true);
+    }
+    _compactBounds = null;
+  }
+
+  PlayerStats? _selectedPlayer(DpsSnapshot snapshot) {
+    final detailPlayerId = _detailPlayerId;
+    if (detailPlayerId == null) return null;
+    for (final player in snapshot.players) {
+      if (player.id == detailPlayerId) return player;
+    }
+    return null;
   }
 
   @override
@@ -105,41 +176,49 @@ class _MeterWindowState extends State<MeterWindow> {
             borderRadius: BorderRadius.circular(10),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
-              child: _detailPlayer != null
-                  ? KeyedSubtree(
-                      key: ValueKey(_detailPlayer!.id),
-                      child: PlayerDetailScreen(
-                        player: _detailPlayer!,
-                        colorIndex: _detailColorIndex,
-                        onBack: _closeDetail,
-                      ),
-                    )
-                  : KeyedSubtree(
-                      key: const ValueKey('main'),
-                      child: Column(children: [
-                        _TitleBar(
+              child: KeyedSubtree(
+                key: ValueKey(_detailPlayerId ?? 'main'),
+                child: Column(children: [
+                  _TitleBar(
+                    showChart: _showChart,
+                    opacity: _opacity,
+                    onToggleChart: () => setState(() => _showChart = !_showChart),
+                    onReset: () => context.read<WsService>().sendReset(),
+                  ),
+                  Expanded(
+                    child: Consumer<WsService>(
+                      builder: (_, ws, __) {
+                        final selectedPlayer = _selectedPlayer(ws.snapshot);
+                        if (selectedPlayer != null) {
+                          return PlayerDetailScreen(
+                            player: selectedPlayer,
+                            colorIndex: _detailColorIndex,
+                            onBack: () {
+                              _closeDetail();
+                            },
+                          );
+                        }
+
+                        return _Body(
+                          snapshot: ws.snapshot,
+                          status: ws.status,
                           showChart: _showChart,
                           opacity: _opacity,
-                          onToggleChart: () => setState(() => _showChart = !_showChart),
-                          onReset: () => context.read<WsService>().sendReset(),
-                        ),
-                        Expanded(
-                          child: Consumer<WsService>(
-                            builder: (_, ws, __) => _Body(
-                              snapshot: ws.snapshot,
-                              status: ws.status,
-                              showChart: _showChart,
-                              opacity: _opacity,
-                              onOpacityChanged: (v) {
-                                setState(() => _opacity = v);
-                                windowManager.setOpacity(v);
-                              },
-                              onPlayerTap: _openDetail,
-                            ),
-                          ),
-                        ),
-                      ]),
+                          filterMode: ws.filterMode,
+                          onOpacityChanged: (v) {
+                            setState(() => _opacity = v);
+                            windowManager.setOpacity(v);
+                          },
+                          onFilterChanged: (mode) => ws.sendFilter(mode),
+                          onPlayerTap: (player, colorIndex) {
+                            _openDetail(player, colorIndex);
+                          },
+                        );
+                      },
                     ),
+                  ),
+                ]),
+              ),
             ),
           ),
         ),
@@ -247,13 +326,17 @@ class _Body extends StatelessWidget {
   final WsStatus status;
   final bool showChart;
   final double opacity;
+  final FilterMode filterMode;
   final ValueChanged<double> onOpacityChanged;
+  final ValueChanged<FilterMode> onFilterChanged;
   final void Function(PlayerStats, int)? onPlayerTap;
 
   const _Body({
     required this.snapshot, required this.status,
     required this.showChart, required this.opacity,
+    required this.filterMode,
     required this.onOpacityChanged,
+    required this.onFilterChanged,
     this.onPlayerTap,
   });
 
@@ -265,6 +348,8 @@ class _Body extends StatelessWidget {
     return Column(children: [
       // Stats rápidas
       _StatsRow(snapshot: snapshot),
+      // Barra de filtro
+      _FilterBar(current: filterMode, onChanged: onFilterChanged),
       // Gráfico colapsável
       if (showChart) ...[
         Container(
@@ -345,6 +430,72 @@ class _StatCell extends StatelessWidget {
           ),
         ),
       ]),
+    ),
+  );
+}
+
+// ─── Barra de filtro ──────────────────────────────────────────────────────────
+class _FilterBar extends StatelessWidget {
+  final FilterMode current;
+  final ValueChanged<FilterMode> onChanged;
+  const _FilterBar({required this.current, required this.onChanged});
+
+  static const _labels = {
+    FilterMode.all:    'Todos',
+    FilterMode.party:  'Party',
+    FilterMode.target: 'Target',
+  };
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 28,
+    decoration: const BoxDecoration(
+      color: Color(0x08FFFFFF),
+      border: Border(bottom: BorderSide(color: kBorderFaint, width: 0.5)),
+    ),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    child: Row(children: [
+      for (final mode in FilterMode.values) ...[
+        _FilterPill(
+          label: _labels[mode]!,
+          active: current == mode,
+          onTap: () => onChanged(mode),
+        ),
+        if (mode != FilterMode.values.last) const SizedBox(width: 4),
+      ],
+    ]),
+  );
+}
+
+class _FilterPill extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _FilterPill({required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: active ? kAccent.withOpacity(0.18) : Colors.transparent,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: active ? kAccent.withOpacity(0.5) : const Color(0x22FFFFFF),
+          width: 0.5,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          color: active ? kAccent : kTextMuted,
+          fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+          letterSpacing: 0.3,
+        ),
+      ),
     ),
   );
 }

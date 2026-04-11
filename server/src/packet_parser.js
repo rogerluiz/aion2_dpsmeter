@@ -10,6 +10,8 @@
  *   05 38 — DoT (Damage over Time)
  */
 
+const {normalizeSkillCode} = require('./skill_names');
+
 // ─── VarInt ─────────────────────────────────────────────────────────────────
 function readVarInt(buf, offset) {
   let value = 0,
@@ -43,13 +45,15 @@ function parseDamage(pkt, oo) {
     if (fv.length < 0) return null;
     off += fv.length;
     const av = readVarInt(pkt, off);
-    if (av.length < 0 || av.value < 100) return null;
+    if (av.length < 0 || av.value <= 0) return null;
+    if (av.value === tv.value) return null; // Kotlin: skip self-hit (actor == target)
     off += av.length;
     if (off + 4 > pkt.length) return null;
-    const skillCode = pkt.readUInt32LE(off);
+    const rawSkillCode = pkt.readUInt32LE(off);
     off += 4;
     // Skip 7-digit NPC/mob skills (1M–9.9M) — A2Tools Rust parity
-    if (skillCode >= 1_000_000 && skillCode <= 9_999_999) return null;
+    if (rawSkillCode >= 1_000_000 && rawSkillCode <= 9_999_999) return null;
+    const skillCode = normalizeSkillCode(rawSkillCode);
     if (off < pkt.length) off++; // skip UID byte
     const dtv = readVarInt(pkt, off);
     if (dtv.length < 0) return null;
@@ -63,12 +67,13 @@ function parseDamage(pkt, oo) {
     const specSz = {4: 8, 5: 12, 6: 10, 7: 14}[andRes];
     off += specSz;
     if (off >= pkt.length) return null;
-    const first = readVarInt(pkt, off);
-    if (first.length < 0) return null;
-    off += first.length;
-    const second = readVarInt(pkt, off);
-    if (second.length < 0) return null;
-    const dmg = second.value <= 25 ? first.value : second.value;
+    // unknownInfo → damageInfo (matches Kotlin: unknownInfo, damageInfo, loopInfo after flags block)
+    const unknownInfo = readVarInt(pkt, off);
+    if (unknownInfo.length < 0) return null;
+    off += unknownInfo.length;
+    const damageInfo = readVarInt(pkt, off);
+    if (damageInfo.length < 0) return null;
+    const dmg = damageInfo.value; // always use damageInfo (second varint after flags block)
     if (dmg <= 0 || dmg > 99999999) return null;
 
     return {
@@ -83,6 +88,57 @@ function parseDamage(pkt, oo) {
       isParry: (flags & 0x04) !== 0,
       isPerfect: (flags & 0x08) !== 0,
       isDouble: (flags & 0x10) !== 0,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+// ─── DoT parser (0x05 0x38) ───────────────────────────────────────────────────
+// Matches Kotlin StreamProcessor.parseDoTPacket structure:
+//   [varint target] [skip 1] [varint actor] [varint unknown] [uint32le skillCode/100] [varint damage]
+function parseDot(pkt, oo) {
+  try {
+    let off = oo + 2; // skip opcode 05 38
+
+    const tv = readVarInt(pkt, off);
+    if (tv.length < 0 || tv.value <= 0) return null;
+    off += tv.length;
+
+    if (off >= pkt.length) return null;
+    off += 1; // skip unknown byte after target
+
+    const av = readVarInt(pkt, off);
+    if (av.length < 0 || av.value <= 0) return null;
+    if (av.value === tv.value) return null; // self-hit → skip
+    off += av.length;
+
+    const uv = readVarInt(pkt, off);
+    if (uv.length < 0) return null;
+    off += uv.length;
+
+    if (off + 4 > pkt.length) return null;
+    const rawSkillCode = pkt.readUInt32LE(off);
+    const skillCode = normalizeSkillCode(Math.trunc(rawSkillCode / 100));
+    off += 4;
+
+    const dv = readVarInt(pkt, off);
+    if (dv.length < 0) return null;
+    const dmg = dv.value;
+    if (dmg <= 0 || dmg > 99999999) return null;
+
+    return {
+      type: 'damage',
+      actorId: av.value,
+      targetId: tv.value,
+      skillCode,
+      damage: dmg,
+      isCrit: false,
+      isDot: true,
+      isBackAttack: false,
+      isParry: false,
+      isPerfect: false,
+      isDouble: false,
     };
   } catch (_) {
     return null;
@@ -117,12 +173,20 @@ function readVarIntBackward(pkt, endPos) {
  */
 function tryDecodeNickname(bytes) {
   if (!bytes || bytes.length < 2 || bytes.length > 36) return null;
-  // Must not contain control characters (< 0x20)
+  // Reject control characters (< 0x20)
   if (bytes.some((b) => b < 0x20)) return null;
   try {
-    const s = bytes.toString('utf8');
-    // Must start with an alphanumeric or non-ASCII (CJK) character
-    if (!/^[\w\u00C0-\uFFFF]/.test(s)) return null;
+    const s = Buffer.from(bytes).toString('utf8');
+    // Reject invalid UTF-8 (replacement char)
+    if (s.includes('\uFFFD')) return null;
+    // Must start with a letter (ASCII or Korean/CJK), NOT a digit or symbol
+    if (!/^[A-Za-z\uAC00-\uD7A3\u1100-\u11FF\u4E00-\u9FFF]/.test(s))
+      return null;
+    // Only allow letters, digits — no symbols (@, %, ., ], etc.)
+    if (!/^[A-Za-z0-9\uAC00-\uD7A3\u1100-\u11FF\u4E00-\u9FFF]+$/.test(s))
+      return null;
+    // Must contain at least one letter
+    if (!/[A-Za-z\uAC00-\uD7A3\u1100-\u11FF\u4E00-\u9FFF]/.test(s)) return null;
     if (s.length < 2) return null;
     return s;
   } catch (_) {
@@ -156,7 +220,7 @@ function scanNicknamesInBuffer(buf, startAt = 0) {
           if (i < vLen) continue;
           const vStart = i - vLen;
           const v = readVarInt(buf, vStart);
-          if (v.length === vLen && v.value >= 100 && v.value <= 9_999_999) {
+          if (v.length === vLen && v.value > 0 && v.value <= 9_999_999) {
             found.push({actorId: v.value, name});
             break;
           }
@@ -194,12 +258,179 @@ function scanNicknamesInBuffer(buf, startAt = 0) {
 }
 
 /**
+ * Scans for 0xF8 0x03 loot attribution marker pattern.
+ * Matches Kotlin NameResolver.parseLootAttributionActorName():
+ *   [...varint(actorId) 0xF8 0x03 nameLen name guildNameLen guildName ...]
+ * actorId must be 2-byte varint, range 100..99999.
+ */
+function scanLootAttributionNames(buf) {
+  const found = [];
+  try {
+    for (let i = 2; i < buf.length - 4; i++) {
+      if (buf[i] !== 0xf8 || buf[i + 1] !== 0x03) continue;
+      const actorOff = i - 2;
+      const actorInfo = readVarInt(buf, actorOff);
+      // Kotlin: length must be 2 AND it must end right before the marker
+      if (actorInfo.length !== 2 || actorOff + actorInfo.length !== i) continue;
+      if (actorInfo.value < 100 || actorInfo.value > 99999) continue;
+      const lenIdx = i + 2;
+      if (lenIdx >= buf.length) continue;
+      const nameLength = buf[lenIdx];
+      if (nameLength < 3 || nameLength > 16) continue;
+      const nameStart = lenIdx + 1;
+      const nameEnd = nameStart + nameLength;
+      if (nameEnd > buf.length) continue;
+      const name = tryDecodeNickname(buf.slice(nameStart, nameEnd));
+      if (name) found.push({actorId: actorInfo.value, name});
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return found;
+}
+
+/**
+ * Kotlin-style 0x04 0x8D nickname scan: tries each offset in a 24-byte
+ * window after the opcode, looking for [varint actorId][1-byte nameLen][name].
+ * Matches NameResolver.parseNickname() from the reference implementation.
+ */
+function parseNickname04_8D(pkt, oo) {
+  if (pkt[oo] !== 0x04 || pkt[oo + 1] !== 0x8d) return null;
+  const searchStart = oo + 2;
+  const searchEnd = Math.min(pkt.length - 2, searchStart + 24);
+  for (let c = searchStart; c <= searchEnd; c++) {
+    const playerInfo = readVarInt(pkt, c);
+    if (playerInfo.length <= 0 || playerInfo.value <= 0) continue;
+    const nameLenOff = c + playerInfo.length;
+    if (nameLenOff >= pkt.length) continue;
+    const nickLen = pkt[nameLenOff];
+    if (nickLen === 0 || nickLen > 72) continue;
+    const nameEnd = nameLenOff + 1 + nickLen;
+    if (nameEnd > pkt.length) continue;
+    const name = tryDecodeNickname(pkt.slice(nameLenOff + 1, nameEnd));
+    if (name) return {actorId: playerInfo.value, name};
+  }
+  return null;
+}
+
+/**
+ * Scans a buffer for 0x36 anchor + varint actorId (>=1000) + 0x07 + name.
+ * Matches Kotlin NameResolver.parseEntityNameBindingRules().
+ * Returns array of {actorId, name} found.
+ */
+function scanEntityNameBindings(buf) {
+  const found = [];
+  try {
+    for (let i = 0; i < buf.length - 2; i++) {
+      if (buf[i] !== 0x36) continue;
+      const actorInfo = readVarInt(buf, i + 1);
+      if (actorInfo.length <= 0 || actorInfo.value < 1000) continue;
+      const searchFrom = i + 1 + actorInfo.length;
+      // Use a large window (256 bytes) — player spawn packets can be large
+      const searchTo = Math.min(buf.length - 2, searchFrom + 256);
+      for (let j = searchFrom; j < searchTo; j++) {
+        if (buf[j] !== 0x07) continue;
+        const nameLen = buf[j + 1];
+        if (nameLen < 1 || nameLen > 16 || j + 2 + nameLen > buf.length)
+          continue;
+        const name = tryDecodeNickname(buf.slice(j + 2, j + 2 + nameLen));
+        if (name) {
+          found.push({actorId: actorInfo.value, name});
+          break;
+        }
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return found;
+}
+
+/**
  * Scans a 04 8D packet for nickname patterns.
- * Also used inside the consume() loop for framed 04 8D packets.
+ * Tries Kotlin-style window scan first, then falls back to E2/E0 07 pattern.
  */
 function parseNickname(pkt, oo) {
+  const kt = parseNickname04_8D(pkt, oo);
+  if (kt) return {type: 'nickname', ...kt};
   const hits = scanNicknamesInBuffer(pkt, oo);
   if (hits.length > 0) return {type: 'nickname', ...hits[0]};
+  return null;
+}
+
+function parseOwnNicknamePacket(pkt, oo) {
+  try {
+    let off = oo;
+    if (pkt[off] !== 0x33 || pkt[off + 1] !== 0x36) return null;
+    off += 2;
+
+    const actor = readVarInt(pkt, off);
+    if (actor.length <= 0 || actor.value < 100) return null;
+    off += actor.length;
+
+    // Scan up to 200 bytes for the 0x07 name anchor — spawn packets are large
+    const splitter = pkt
+      .slice(off, Math.min(pkt.length, off + 200))
+      .indexOf(0x07);
+    if (splitter < 0) return null;
+    off += splitter + 1;
+
+    const nameLen = (buf) => buf[0];
+    const nl = pkt[off];
+    if (nl < 1 || nl > 16) return null;
+    off += 1;
+
+    if (pkt.length < off + nl) return null;
+    const name = tryDecodeNickname(pkt.slice(off, off + nl));
+    if (!name) return null;
+
+    return {type: 'nickname', actorId: actor.value, name};
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseSpawnNicknamePacket(pkt, oo) {
+  try {
+    let off = oo;
+    if (pkt[off] !== 0x44 || pkt[off + 1] !== 0x36) return null;
+    off += 2;
+
+    const actor = readVarInt(pkt, off);
+    if (actor.length <= 0 || actor.value < 100) return null;
+    off += actor.length;
+
+    const unknown1 = readVarInt(pkt, off);
+    if (unknown1.length <= 0) return null;
+    off += unknown1.length;
+
+    const unknown2 = readVarInt(pkt, off);
+    if (unknown2.length <= 0) return null;
+    off += unknown2.length;
+
+    if (pkt.length - off <= 2) return null;
+    off += 1;
+    const base = off;
+
+    for (let i = 0; i < 5; i++) {
+      off = base + i;
+      if (pkt.length <= off) continue;
+
+      const nameLen = readVarInt(pkt, off);
+      if (nameLen.length <= 0 || nameLen.value < 1 || nameLen.value > 71)
+        continue;
+      off += nameLen.length;
+
+      if (pkt.length < off + nameLen.value) continue;
+      const name = tryDecodeNickname(pkt.slice(off, off + nameLen.value));
+      if (name) {
+        return {type: 'nickname', actorId: actor.value, name};
+      }
+    }
+  } catch (_) {
+    return null;
+  }
+
   return null;
 }
 
@@ -274,17 +505,30 @@ class StreamParser {
           const ev = parseDamage(pkt, oo);
           if (ev) events.push(ev);
         } else if (op0 === 0x05 && op1 === 0x38) {
-          // DoT — same structure as damage
-          const ev = parseDamage(pkt, oo);
-          if (ev) events.push({...ev, isDot: true});
+          // DoT — different structure from damage (Kotlin: parseDoTPacket)
+          const ev = parseDot(pkt, oo);
+          if (ev) events.push(ev);
         } else if (op0 === 0x04 && op1 === 0x8d) {
-          // Nickname packet — scan for E2/E0 07 anchor pattern
-          const ev = parseNickname(pkt, oo);
+          // Nickname packet — emit all found nicknames (Kotlin style: window scan + E2/E0)
+          const kt = parseNickname04_8D(pkt, oo);
+          if (kt) {
+            events.push({type: 'nickname', ...kt});
+          } else {
+            scanNicknamesInBuffer(pkt, oo).forEach((h) =>
+              events.push({type: 'nickname', ...h}),
+            );
+          }
+        } else if (op0 === 0x33 && op1 === 0x36) {
+          const ev = parseOwnNicknamePacket(pkt, oo);
           if (ev) events.push(ev);
         } else if (op0 === 0x44 && op1 === 0x36) {
-          // Player spawn — extract name from 07 anchor within 40 bytes
-          const hits = scanNicknamesInBuffer(pkt, oo);
-          hits.forEach((h) => events.push({type: 'nickname', ...h}));
+          const ev = parseSpawnNicknamePacket(pkt, oo);
+          if (ev) {
+            events.push(ev);
+          } else {
+            const hits = scanNicknamesInBuffer(pkt, oo);
+            hits.forEach((h) => events.push({type: 'nickname', ...h}));
+          }
         }
       }
 
@@ -293,11 +537,14 @@ class StreamParser {
 
     this._streams.set(connKey, buf.slice(offset));
 
-    // Raw scan of the new TCP segment for nickname patterns (mirrors Rust scan_for_embedded_04_8d)
-    // This catches names embedded in compressed bundles or non-framed positions
-    const rawNicknames = scanNicknamesInBuffer(bytes);
-    rawNicknames.forEach((h) => {
-      // Deduplicate: only emit if not already found via framed parsing
+    // Raw scan of the new TCP segment for nickname patterns.
+    // Catches names embedded in compressed bundles or non-framed positions.
+    const allRaw = [
+      ...scanNicknamesInBuffer(bytes),
+      ...scanEntityNameBindings(bytes),
+      ...scanLootAttributionNames(bytes),
+    ];
+    allRaw.forEach((h) => {
       if (
         !events.some((e) => e.type === 'nickname' && e.actorId === h.actorId)
       ) {

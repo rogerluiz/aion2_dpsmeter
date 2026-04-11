@@ -13,6 +13,13 @@ class WsServer extends EventEmitter {
     this._port = port;
     this._wss = null;
     this._clients = new Set();
+    // Filter state (applied by index.js when calling calculator.getSnapshot)
+    this._filterMode = 'all'; // 'all' | 'party' | 'target'
+    this._filterTargetId = null; // pinned targetId (null = auto-detect)
+  }
+
+  get filterOptions() {
+    return {filterMode: this._filterMode, filterTargetId: this._filterTargetId};
   }
 
   start() {
@@ -31,6 +38,18 @@ class WsServer extends EventEmitter {
           if (msg.action === 'reset') {
             this.emit('reset');
             ws.send(JSON.stringify({type: 'reset_ack'}));
+          } else if (msg.action === 'set_filter') {
+            const mode = msg.mode;
+            if (['all', 'party', 'target'].includes(mode)) {
+              this._filterMode = mode;
+              // When switching to 'target' with an explicit id, pin it
+              this._filterTargetId =
+                mode === 'target' ? msg.targetId || null : null;
+              console.log(
+                `[WS] Filtro: ${mode}${this._filterTargetId ? ` (target=${this._filterTargetId})` : ''}`,
+              );
+              this.emit('filterChanged');
+            }
           }
         } catch (_) {}
       });

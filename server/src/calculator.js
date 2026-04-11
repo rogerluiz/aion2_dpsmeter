@@ -1,11 +1,12 @@
 ﻿'use strict';
 /**
- * calculator.js â€” Acumula eventos de combate e calcula DPS por jogador.
+ * calculator.js - Acumula eventos de combate e calcula DPS por jogador.
  */
 
+const EventEmitter = require('events');
 const {getSkillName} = require('./skill_names');
 
-// â”€â”€â”€ Class detection from skill code (port of A2Tools job_class.rs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// --- Class detection from skill code (port of A2Tools job_class.rs) ----------
 const CLASS_NAMES = {
   11: 'Gladiator',
   12: 'Templar',
@@ -19,14 +20,12 @@ const CLASS_NAMES = {
 
 function detectClass(skillCode) {
   if (!skillCode) return null;
-  // Elementalist 6-digit specific ranges
   if (
     (skillCode >= 100510 && skillCode <= 103500) ||
     (skillCode >= 109300 && skillCode <= 109362)
   ) {
     return 'Elementalist';
   }
-  // Standard 8-digit player skills (10_000_000..19_999_999)
   if (skillCode >= 10_000_000 && skillCode <= 19_999_999) {
     const prefix = Math.floor(skillCode / 1_000_000);
     return CLASS_NAMES[prefix] || null;
@@ -34,17 +33,19 @@ function detectClass(skillCode) {
   return null;
 }
 
-class DpsCalculator {
+class DpsCalculator extends EventEmitter {
   constructor() {
+    super();
     this._players = {};
-    this._nicknameCache = {}; // actorId â†’ name (pre-cache before first damage)
+    this._nicknameCache = {}; // actorId -> name (pre-cache before first damage)
     this._startTime = Date.now();
-    this._history = {}; // actorId â†’ [{t, dps, hps}]
+    this._history = {}; // actorId -> [{t, dps, hps}]
     this._histInterval = setInterval(() => this._recordHistory(), 1000);
   }
 
   _recordHistory() {
     const now = Date.now();
+    const elapsed = (now - this._startTime) / 1000;
     const DPS_WINDOW_MS = 10000;
     for (const [id, p] of Object.entries(this._players)) {
       p._window = p._window.filter((e) => now - e.t <= DPS_WINDOW_MS);
@@ -53,14 +54,17 @@ class DpsCalculator {
       const windowSec = (now - effectiveStart) / 1000;
       const dps = windowSec > 0 ? windowDmg / windowSec : 0;
       if (!this._history[id]) this._history[id] = [];
-      this._history[id].push({t: elapsed, dps: Math.round(dps), hps: 0});
-      // Keep last 300 points (5 min)
+      this._history[id].push({
+        t: Math.round(elapsed),
+        dps: Math.round(dps),
+        hps: 0,
+      });
       if (this._history[id].length > 300) this._history[id].shift();
     }
   }
 
   /**
-   * @param {{ actorId, damage, isCrit?, isDot?, skillCode?,
+   * @param {{ actorId, targetId, damage, isCrit?, isDot?, skillCode?,
    *           isBackAttack?, isParry?, isPerfect?, isDouble? }} event
    */
   addEvent(event) {
@@ -79,9 +83,12 @@ class DpsCalculator {
         doubles: 0,
         parries: 0,
         maxHit: 0,
-        _window: [],
+        _window: [], // [{t, dmg, targetId}]
         _firstHit: Date.now(),
-        skills: {}, // skillCode â†’ SkillStats
+        _targetDmg: {}, // {targetId: totalDmg}
+        _targetHits: {}, // {targetId: hitCount}
+        _targetFirstHit: {}, // {targetId: ms timestamp}
+        skills: {}, // skillCode -> SkillStats
       };
     }
     const p = this._players[id];
@@ -93,15 +100,23 @@ class DpsCalculator {
     }
 
     const dmg = event.damage || 0;
+    const tId = event.targetId;
     p.totalDamage += dmg;
     p.hits += 1;
-    if (event.isCrit)       p.crits += 1;
+    if (event.isCrit) p.crits += 1;
     if (event.isBackAttack) p.backAttacks += 1;
-    if (event.isPerfect)    p.perfects += 1;
-    if (event.isDouble)     p.doubles += 1;
-    if (event.isParry)      p.parries += 1;
-    if (dmg > p.maxHit)     p.maxHit = dmg;
-    p._window.push({t: Date.now(), dmg});
+    if (event.isPerfect) p.perfects += 1;
+    if (event.isDouble) p.doubles += 1;
+    if (event.isParry) p.parries += 1;
+    if (dmg > p.maxHit) p.maxHit = dmg;
+    p._window.push({t: Date.now(), dmg, targetId: tId});
+
+    // Per-target totals (for 'target' filter mode)
+    if (tId) {
+      p._targetDmg[tId] = (p._targetDmg[tId] || 0) + dmg;
+      p._targetHits[tId] = (p._targetHits[tId] || 0) + 1;
+      if (!p._targetFirstHit[tId]) p._targetFirstHit[tId] = Date.now();
+    }
 
     // Per-skill tracking
     if (event.skillCode) {
@@ -124,67 +139,111 @@ class DpsCalculator {
     }
   }
 
-  /** Retorna snapshot compatÃ­vel com o WebSocket do frontend Flutter. */
-  getSnapshot() {
+  /**
+   * Returns the targetId most hit across all players (for auto-target detection).
+   */
+  getTopTarget() {
+    const counts = {};
+    for (const p of Object.values(this._players)) {
+      for (const [tid, cnt] of Object.entries(p._targetHits)) {
+        counts[tid] = (counts[tid] || 0) + cnt;
+      }
+    }
+    const entries = Object.entries(counts);
+    if (!entries.length) return null;
+    return Number(entries.sort((a, b) => b[1] - a[1])[0][0]);
+  }
+
+  /**
+   * Returns snapshot filtered by filterMode.
+   * @param {{ filterMode?: 'all'|'party'|'target', filterTargetId?: number|null }} options
+   */
+  getSnapshot(options = {}) {
+    const {filterMode = 'all', filterTargetId = null} = options;
     const now = Date.now();
     const elapsed = (now - this._startTime) / 1000;
-    const DPS_WINDOW_MS = 10000; // 10s rolling window
+    const DPS_WINDOW_MS = 10000;
 
-    const totalDamage = Object.values(this._players).reduce(
-      (s, p) => s + p.totalDamage,
-      0,
-    );
+    // Auto-detect top target when mode is 'target'
+    const activeTarget =
+      filterMode === 'target' ? filterTargetId || this.getTopTarget() : null;
 
-    const players = Object.values(this._players).map((p) => {
-      // NOTE: _window is trimmed by _recordHistory — no double-trim here
-      const windowDmg = p._window.reduce((s, e) => s + e.dmg, 0);
-      const effectiveStart = Math.max(p._firstHit || now, now - DPS_WINDOW_MS);
-      const windowSec = (now - effectiveStart) / 1000;
-      const currentDps = windowSec > 0 ? windowDmg / windowSec : 0;
-      const critRate = p.hits > 0 ? p.crits / p.hits : 0;
+    let allPlayers = Object.values(this._players);
 
-      // Build skills array sorted by total damage desc
-      const skills = Object.values(p.skills)
-        .sort((a, b) => b.totalDmg - a.totalDmg)
-        .map((sk) => ({
-          code:      sk.code,
-          name:      sk.name,
-          hits:      sk.hits,
-          crits:     sk.crits,
-          total_dmg: sk.totalDmg,
-          max_dmg:   sk.maxDmg,
-          crit_rate: sk.hits > 0 ? parseFloat((sk.crits / sk.hits).toFixed(4)) : 0,
-        }));
+    // 'party' mode: only actors with a detected class (real players, not NPCs)
+    if (filterMode === 'party') {
+      allPlayers = allPlayers.filter((p) => p.class_name !== '');
+    }
 
-      return {
-        id:           p.id,
-        name:         p.name,
-        class_name:   p.class_name,
-        total_damage: p.totalDamage,
-        total_heal:   0,
-        total_hits:   p.hits,
-        total_crits:  p.crits,
-        total_misses: p.misses,
-        back_attacks: p.backAttacks,
-        perfects:     p.perfects,
-        doubles:      p.doubles,
-        parries:      p.parries,
-        current_dps:  Math.round(currentDps),
-        current_hps:  0,
-        max_hit:      p.maxHit,
-        crit_rate:    parseFloat(critRate.toFixed(4)),
-        skills,
-      };
-    });
+    const players = allPlayers
+      .map((p) => {
+        let window = p._window.filter((e) => now - e.t <= DPS_WINDOW_MS);
+        let totalDmg = p.totalDamage;
+        let totalHits = p.hits;
 
-    // Ordena por total_damage decrescente
+        if (activeTarget) {
+          window = window.filter((e) => e.targetId === activeTarget);
+          totalDmg = p._targetDmg[activeTarget] || 0;
+          totalHits = p._targetHits[activeTarget] || 0;
+          if (totalDmg === 0) return null; // skip actors that never hit this target
+        }
+
+        const windowDmg = window.reduce((s, e) => s + e.dmg, 0);
+        // DPS window: from first hit on target (or 10s ago), whichever is later
+        const firstHitMs = activeTarget
+          ? p._targetFirstHit[activeTarget] || now
+          : p._firstHit || now;
+        const effectiveStart = Math.max(firstHitMs, now - DPS_WINDOW_MS);
+        const windowSec = Math.max((now - effectiveStart) / 1000, 0.1);
+        const currentDps = windowDmg / windowSec;
+        const critRate = p.hits > 0 ? p.crits / p.hits : 0;
+
+        const skills = Object.values(p.skills)
+          .sort((a, b) => b.totalDmg - a.totalDmg)
+          .map((sk) => ({
+            code: sk.code,
+            name: sk.name,
+            hits: sk.hits,
+            crits: sk.crits,
+            total_dmg: sk.totalDmg,
+            max_dmg: sk.maxDmg,
+            crit_rate:
+              sk.hits > 0 ? parseFloat((sk.crits / sk.hits).toFixed(4)) : 0,
+          }));
+
+        return {
+          id: p.id,
+          name: p.name,
+          class_name: p.class_name,
+          total_damage: totalDmg,
+          total_heal: 0,
+          total_hits: totalHits,
+          total_crits: p.crits,
+          total_misses: p.misses,
+          back_attacks: p.backAttacks,
+          perfects: p.perfects,
+          doubles: p.doubles,
+          parries: p.parries,
+          current_dps: Math.round(currentDps),
+          current_hps: 0,
+          max_hit: p.maxHit,
+          crit_rate: parseFloat(critRate.toFixed(4)),
+          skills,
+        };
+      })
+      .filter(Boolean);
+
     players.sort((a, b) => b.total_damage - a.total_damage);
+
+    const totalDamage = players.reduce((s, p) => s + p.total_damage, 0);
 
     return {
       type: 'snapshot',
       data: {
         session_duration: elapsed,
         total_damage: totalDamage,
+        filter_mode: filterMode,
+        filter_target_id: activeTarget,
         players,
         dps_history: Object.fromEntries(
           Object.entries(this._history).map(([id, pts]) => [id, pts]),
@@ -195,12 +254,29 @@ class DpsCalculator {
 
   /**
    * Update or pre-cache the display name of a player.
-   * Works even if the player has not appeared in combat yet.
+   * AION 2 uses two separate IDs: a display/entity ID (in nickname packets)
+   * and a combat session ID (in damage packets). When a nickname arrives for
+   * an actorId not seen in combat, we auto-alias it to any unnamed combat
+   * player — this bridges the dual-ID gap for solo play.
    */
   setNickname(actorId, nickname) {
     this._nicknameCache[actorId] = nickname;
     if (this._players[actorId]) {
+      // Direct match: combat ID == display ID
       this._players[actorId].name = nickname;
+      this.emit('nameUpdated', actorId);
+      return;
+    }
+
+    // Auto-alias: find combat players still using the default name
+    const unnamed = Object.values(this._players).filter((p) =>
+      p.name.startsWith('Player_'),
+    );
+    if (unnamed.length === 1) {
+      // Only one unnamed combat player → assume this nickname is theirs
+      unnamed[0].name = nickname;
+      this._nicknameCache[unnamed[0].id] = nickname;
+      this.emit('nameUpdated', unnamed[0].id);
     }
   }
 

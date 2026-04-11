@@ -1,7 +1,29 @@
 // player_detail.dart — Janela de detalhes por jogador (920×680)
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'models.dart';
+
+// ─── Cache global do mapa skill code → CDN URL ──────────────────────────────
+Map<String, String>? _cachedIconMap;
+Future<Map<String, String>>? _iconMapFuture;
+
+Future<Map<String, String>> _loadIconMap() {
+  _iconMapFuture ??= rootBundle
+      .loadString('assets/backend/skill_icon_map.json')
+      .then((s) {
+        final m = (json.decode(s) as Map<String, dynamic>).cast<String, String>();
+        _cachedIconMap = m;
+        return m;
+      })
+      .catchError((_) {
+        _iconMapFuture = null;
+        return <String, String>{};
+      });
+  return _iconMapFuture!;
+}
+
 
 // ─── Paleta ────────────────────────────────────────────────────────────────────
 const _kBg     = Color(0xFF0C0D0F);
@@ -271,6 +293,7 @@ class _SkillPanel extends StatelessWidget {
               skill: skills[i],
               color: color,
               topDmg: topDmg,
+              className: player.className,
             ),
           ),
         ),
@@ -282,7 +305,8 @@ class _SkillCard extends StatelessWidget {
   final SkillStat skill;
   final Color color;
   final int topDmg;
-  const _SkillCard({required this.skill, required this.color, required this.topDmg});
+  final String className;
+  const _SkillCard({required this.skill, required this.color, required this.topDmg, required this.className});
 
   @override
   Widget build(BuildContext context) {
@@ -321,17 +345,23 @@ class _SkillCard extends StatelessWidget {
           ]),
         ),
         const SizedBox(width: 16),
-        // Estatísticas
-        _MetaStat(label: 'TOTAL',  value: skill.formattedTotalDmg, color: color),
-        const SizedBox(width: 14),
-        _MetaStat(label: 'MAX',    value: _fmt(skill.maxDmg),      color: _kMuted),
-        const SizedBox(width: 14),
-        _MetaStat(label: 'HITS',   value: '${skill.hits}',         color: _kMuted),
-        const SizedBox(width: 14),
-        _MetaStat(
-          label: 'CRIT',
-          value: '${(skill.critRate * 100).toStringAsFixed(0)}%',
-          color: critHot ? const Color(0xFFFFB74D) : _kDim,
+        // Stats — scaled down proportionally on narrow widths
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Row(children: [
+            _MetaStat(label: 'TOTAL',  value: skill.formattedTotalDmg, color: color),
+            const SizedBox(width: 14),
+            _MetaStat(label: 'MAX',    value: _fmt(skill.maxDmg),      color: _kMuted),
+            const SizedBox(width: 14),
+            _MetaStat(label: 'HITS',   value: '${skill.hits}',         color: _kMuted),
+            const SizedBox(width: 14),
+            _MetaStat(
+              label: 'CRIT',
+              value: '${(skill.critRate * 100).toStringAsFixed(0)}%',
+              color: critHot ? const Color(0xFFFFB74D) : _kDim,
+            ),
+          ]),
         ),
       ]),
     );
@@ -368,18 +398,31 @@ class _SkillIcon extends StatelessWidget {
   const _SkillIcon({required this.code, required this.name, required this.color});
 
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(8),
-    child: SizedBox(
-      width: 44, height: 44,
-      child: Image.asset(
-        'assets/skills/$code.png',
-        width: 44, height: 44,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _FallbackIcon(name: name, color: color),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final Widget fallback = _FallbackIcon(name: name, color: color);
+    final rawStr  = code.toString();
+    final baseStr = ((code ~/ 10000) * 10000).toString();
+
+    Widget buildFromMap(Map<String, String>? iconMap) {
+      final url = iconMap?[rawStr] ?? iconMap?[baseStr];
+      if (url == null) return fallback;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 44, height: 44,
+          child: Image.network(url,
+            width: 44, height: 44, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => fallback),
+        ),
+      );
+    }
+
+    if (_cachedIconMap != null) return buildFromMap(_cachedIconMap);
+    return FutureBuilder<Map<String, String>>(
+      future: _loadIconMap(),
+      builder: (ctx, snap) => buildFromMap(snap.data),
+    );
+  }
 }
 
 class _FallbackIcon extends StatelessWidget {

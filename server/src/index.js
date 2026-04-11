@@ -63,10 +63,27 @@ wsServer.on('reset', () => {
   console.log('[INFO] Sessão resetada pelo cliente.');
 });
 
-// Broadcast snapshot a cada 200ms para UI responsiva
+// Broadcast imediato quando nome de jogador é resolvido
+calculator.on('nameUpdated', () => broadcastNow());
+
+// Broadcast imediato quando filtro muda
+wsServer.on('filterChanged', () => broadcastNow());
+
+// Broadcast snapshot a cada 100ms para UI responsiva
 const snapshotInterval = setInterval(() => {
-  wsServer.broadcast(calculator.getSnapshot());
-}, 200);
+  wsServer.broadcast(calculator.getSnapshot(wsServer.filterOptions));
+}, 100);
+
+// Throttle helper: garante no máximo 1 broadcast por tick de event loop
+let _broadcastPending = false;
+function broadcastNow() {
+  if (_broadcastPending) return;
+  _broadcastPending = true;
+  setImmediate(() => {
+    _broadcastPending = false;
+    wsServer.broadcast(calculator.getSnapshot(wsServer.filterOptions));
+  });
+}
 
 // --- Modo MOCK ---
 if (isMock) {
@@ -105,23 +122,19 @@ if (isMock) {
     events.forEach((ev) => {
       if (ev.type === 'nickname') {
         calculator.setNickname(ev.actorId, ev.name);
-        if (process.env.DEBUG) {
-          console.log(`[NICK] actor=${ev.actorId} name="${ev.name}"`);
-        }
+        console.log(`[NICK] actor=${ev.actorId} name="${ev.name}"`);
         return;
       }
       calculator.addEvent(ev);
-      if (process.env.DEBUG) {
-        console.log(
-          `[EVENT] ${ev.isDot ? 'DoT' : 'DMG'} actor=${ev.actorId} target=${ev.targetId} ` +
-            `dmg=${ev.damage} skill=${ev.skillCode} crit=${ev.isCrit}`,
-        );
-      }
+      console.log(
+        `[EVENT] ${ev.isDot ? 'DoT' : 'DMG'} actor=${ev.actorId} target=${ev.targetId} ` +
+          `dmg=${ev.damage} skill=${ev.skillCode} crit=${ev.isCrit}`,
+      );
     });
 
-    // Real-time broadcast on combat events
+    // Real-time broadcast on combat events (throttled to 1 per event loop tick)
     if (events.length > 0) {
-      wsServer.broadcast(calculator.getSnapshot());
+      broadcastNow();
     }
   });
 

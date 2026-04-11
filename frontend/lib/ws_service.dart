@@ -1,4 +1,4 @@
-// ws_service.dart — Cliente WebSocket com reconexão automática
+﻿// ws_service.dart — Cliente WebSocket com reconexão automática
 
 import 'dart:async';
 import 'dart:convert';
@@ -11,6 +11,8 @@ const _reconnectDelay = Duration(seconds: 3);
 
 enum WsStatus { disconnected, connecting, connected }
 
+enum FilterMode { all, party, target }
+
 class WsService extends ChangeNotifier {
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
@@ -18,12 +20,14 @@ class WsService extends ChangeNotifier {
 
   WsStatus _status = WsStatus.disconnected;
   DpsSnapshot _snapshot = DpsSnapshot.empty();
+  FilterMode _filterMode = FilterMode.all;
   String? _error;
 
-  WsStatus get status   => _status;
+  WsStatus get status      => _status;
   DpsSnapshot get snapshot => _snapshot;
-  String? get error     => _error;
-  bool get isConnected  => _status == WsStatus.connected;
+  FilterMode get filterMode => _filterMode;
+  String? get error        => _error;
+  bool get isConnected     => _status == WsStatus.connected;
 
   void connect() {
     if (_status == WsStatus.connecting || _status == WsStatus.connected) return;
@@ -40,6 +44,13 @@ class WsService extends ChangeNotifier {
 
   void sendReset() {
     _send({'action': 'reset'});
+  }
+
+  void sendFilter(FilterMode mode) {
+    if (_filterMode == mode) return;
+    _filterMode = mode;
+    _send({'action': 'set_filter', 'mode': mode.name});
+    notifyListeners();
   }
 
   void _tryConnect() {
