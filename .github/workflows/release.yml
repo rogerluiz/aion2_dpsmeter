@@ -58,6 +58,39 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Write-Host "Dependencies installed"
 
+      - name: Compile cap.node (Npcap native addon)
+        shell: pwsh
+        run: |
+          # prebuild-install@7.1.1 nao encontra prebuilt para Node 18 e o pacote npm
+          # do cap nao inclui wpcap.lib — baixar o Npcap SDK para compilar do fonte.
+          Write-Host "Baixando Npcap SDK..."
+          $sdkZip = "$env:TEMP\npcap-sdk.zip"
+          Invoke-WebRequest -Uri "https://npcap.com/dist/npcap-sdk-1.13.zip" `
+            -OutFile $sdkZip -UseBasicParsing
+          if ($LASTEXITCODE -ne 0) { Write-Error "Falha ao baixar Npcap SDK"; exit 1 }
+          Expand-Archive -Path $sdkZip -DestinationPath "$env:TEMP\npcap-sdk" -Force
+
+          # Coloca wpcap.lib onde binding.gyp do cap espera
+          $capLib = "server\node_modules\cap\deps\winpcap\Lib\x64"
+          New-Item -Path $capLib -ItemType Directory -Force | Out-Null
+          Copy-Item "$env:TEMP\npcap-sdk\Lib\x64\wpcap.lib" "$capLib\wpcap.lib" -Force
+          if (-not (Test-Path "$capLib\wpcap.lib")) {
+            Write-Error "wpcap.lib nao encontrado apos extracao do SDK"
+            exit 1
+          }
+          Write-Host "wpcap.lib instalado em $capLib"
+
+          Set-Location server
+          npm rebuild cap
+          if ($LASTEXITCODE -ne 0) { Write-Error "Falha ao compilar cap.node"; exit 1 }
+          $capNode = "node_modules\cap\build\Release\cap.node"
+          if (-not (Test-Path $capNode)) {
+            Write-Error "cap.node nao encontrado apos compilacao"
+            exit 1
+          }
+          $sz = [math]::Round((Get-Item $capNode).Length / 1KB, 1)
+          Write-Host "cap.node compilado: $sz KB"
+
       - name: Build Node.js server with pkg
         shell: pwsh
         run: |
