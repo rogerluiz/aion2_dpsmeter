@@ -40,9 +40,18 @@ class BackendService {
       _backendProcess = await Process.start(
         serverExe,
         args,
-        mode: ProcessStartMode.normal,
+        mode: ProcessStartMode.detachedWithStdio,
         runInShell: false,
       );
+      // Drena stdout/stderr para o pipe não encher e travar o processo filho
+      _backendProcess!.stdout.drain<void>();
+      _backendProcess!.stderr.drain<void>();
+      // Monitora saída inesperada: reseta _isRunning para permitir relançamento
+      _backendProcess!.exitCode.then((code) {
+        debugPrint('Servidor encerrou (exit=$code)');
+        _isRunning = false;
+        _backendProcess = null;
+      });
       _isRunning = true;
       await Future.delayed(const Duration(seconds: 2));
       debugPrint('Servidor iniciado (PID: ${_backendProcess!.pid})');
@@ -95,10 +104,12 @@ class BackendService {
     _backendProcess = await Process.start(
       'node',
       [indexJs, ...extraArgs],
-      mode: ProcessStartMode.normal,
+      mode: ProcessStartMode.detachedWithStdio,
       runInShell: false,
       workingDirectory: path.dirname(path.dirname(indexJs)), // server/
     );
+    _backendProcess!.stdout.drain<void>();
+    _backendProcess!.stderr.drain<void>();
     _isRunning = true;
     // node precisa de um pouco mais de tempo para JIT + bind ws
     await Future.delayed(const Duration(seconds: 3));
