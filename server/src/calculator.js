@@ -46,13 +46,10 @@ class DpsCalculator extends EventEmitter {
   _recordHistory() {
     const now = Date.now();
     const elapsed = (now - this._startTime) / 1000;
-    const DPS_WINDOW_MS = 10000;
     for (const [id, p] of Object.entries(this._players)) {
-      p._window = p._window.filter((e) => now - e.t <= DPS_WINDOW_MS);
-      const windowDmg = p._window.reduce((s, e) => s + e.dmg, 0);
-      const effectiveStart = Math.max(p._firstHit || now, now - DPS_WINDOW_MS);
-      const windowSec = (now - effectiveStart) / 1000;
-      const dps = windowSec > 0 ? windowDmg / windowSec : 0;
+      const encounterStart = p._firstHit || now;
+      const encounterSec = Math.max((now - encounterStart) / 1000, 0.1);
+      const dps = p.totalDamage / encounterSec;
       if (!this._history[id]) this._history[id] = [];
       this._history[id].push({
         t: Math.round(elapsed),
@@ -162,7 +159,6 @@ class DpsCalculator extends EventEmitter {
     const {filterMode = 'all', filterTargetId = null} = options;
     const now = Date.now();
     const elapsed = (now - this._startTime) / 1000;
-    const DPS_WINDOW_MS = 10000;
 
     // Auto-detect top target when mode is 'target'
     const activeTarget =
@@ -177,25 +173,19 @@ class DpsCalculator extends EventEmitter {
 
     const players = allPlayers
       .map((p) => {
-        let window = p._window.filter((e) => now - e.t <= DPS_WINDOW_MS);
         let totalDmg = p.totalDamage;
         let totalHits = p.hits;
+        let encounterStart = p._firstHit || now;
 
         if (activeTarget) {
-          window = window.filter((e) => e.targetId === activeTarget);
           totalDmg = p._targetDmg[activeTarget] || 0;
           totalHits = p._targetHits[activeTarget] || 0;
           if (totalDmg === 0) return null; // skip actors that never hit this target
+          encounterStart = p._targetFirstHit[activeTarget] || now;
         }
 
-        const windowDmg = window.reduce((s, e) => s + e.dmg, 0);
-        // DPS window: from first hit on target (or 10s ago), whichever is later
-        const firstHitMs = activeTarget
-          ? p._targetFirstHit[activeTarget] || now
-          : p._firstHit || now;
-        const effectiveStart = Math.max(firstHitMs, now - DPS_WINDOW_MS);
-        const windowSec = Math.max((now - effectiveStart) / 1000, 0.1);
-        const currentDps = windowDmg / windowSec;
+        const encounterSec = Math.max((now - encounterStart) / 1000, 0.1);
+        const currentDps = totalDmg / encounterSec;
         const critRate = p.hits > 0 ? p.crits / p.hits : 0;
 
         const skills = Object.values(p.skills)
