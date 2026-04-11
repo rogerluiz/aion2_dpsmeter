@@ -143,8 +143,22 @@ if (isMock) {
   try {
     capture.start(ifaceArg);
   } catch (err) {
-    console.error('[ERROR] Falha ao iniciar captura:', err.message);
-    console.error('[WARN] Iniciando em modo MOCK — instale o Npcap para captura real.');
+    const msg = err.message || String(err);
+    console.error('[ERROR] Falha ao iniciar captura:', msg);
+
+    // Grava log de erro para diagnóstico
+    try {
+      const fs = require('fs');
+      const os = require('os');
+      const logPath = require('path').join(os.tmpdir(), 'aion2_error.log');
+      const ts = new Date().toISOString();
+      fs.appendFileSync(logPath, `[${ts}] capture.start error: ${msg}\n`);
+      console.error('[INFO] Log de erro salvo em:', logPath);
+    } catch (_) {}
+
+    console.error('[WARN] Rodando em modo MOCK. Verifique:');
+    console.error('  1. Execute como Administrador (necessario para Npcap)');
+    console.error('  2. Npcap instalado: https://npcap.com');
 
     // Cai em mock para o WS server continuar funcionando
     const mockPlayers = ['player_1', 'player_2'];
