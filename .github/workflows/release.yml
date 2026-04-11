@@ -40,26 +40,6 @@ jobs:
           "DIST=$dist"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Version: $v  |  Dist: $dist"
 
-      # Npcap é necessário para o módulo nativo 'cap' funcionar
-      - name: Install Npcap
-        shell: pwsh
-        run: |
-          # Verifica múltiplos paths — Wireshark pré-instalado no runner inclui Npcap
-          $paths = @(
-            "C:\Windows\System32\Npcap",
-            "C:\Windows\SysWOW64\Npcap",
-            "C:\Program Files\Npcap"
-          )
-          $found = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if ($found) {
-            Write-Host "Npcap already installed at: $found"
-          } else {
-            Write-Host "Installing Npcap via winget..."
-            winget install -e --id Npcap.Npcap --silent --accept-source-agreements --accept-package-agreements --disable-interactivity
-            if ($LASTEXITCODE -ne 0) { Write-Error "Failed to install Npcap"; exit 1 }
-            Write-Host "Npcap installed"
-          }
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
