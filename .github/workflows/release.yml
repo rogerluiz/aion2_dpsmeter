@@ -15,6 +15,9 @@ env:
   NODE_VERSION: '18'
   FLUTTER_CHANNEL: 'stable'
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: Build Windows Release
