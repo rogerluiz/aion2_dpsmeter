@@ -131,12 +131,19 @@ jobs:
           New-Item -Path installer/dist -ItemType Directory -Force | Out-Null
           Copy-Item -Recurse "$src/*" "installer/dist/" -Force
 
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { Write-Error "Failed to install NSIS"; exit 1 }
+          Write-Host "NSIS installed"
+
       - name: Build NSIS installer
         shell: pwsh
         run: |
           $v = "${{ steps.ver.outputs.VERSION }}"
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
-          if (-not (Test-Path $makensis)) { Write-Error "makensis not found"; exit 1 }
+          if (-not (Test-Path $makensis)) { Write-Error "makensis not found at $makensis"; exit 1 }
           Set-Location installer
           & $makensis /DVERSION=$v aion2_dpsmeter.nsi
           if ($LASTEXITCODE -ne 0) { Write-Error "makensis failed"; exit 1 }
