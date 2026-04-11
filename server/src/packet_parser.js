@@ -172,7 +172,7 @@ function readVarIntBackward(pkt, endPos) {
  * Allows ASCII + CJK (Korean / Chinese) characters via UTF-8.
  */
 function tryDecodeNickname(bytes) {
-  if (!bytes || bytes.length < 2 || bytes.length > 36) return null;
+  if (!bytes || bytes.length < 2 || bytes.length > 71) return null;
   // Reject control characters (< 0x20)
   if (bytes.some((b) => b < 0x20)) return null;
   try {
@@ -276,7 +276,7 @@ function scanLootAttributionNames(buf) {
       const lenIdx = i + 2;
       if (lenIdx >= buf.length) continue;
       const nameLength = buf[lenIdx];
-      if (nameLength < 3 || nameLength > 16) continue;
+      if (nameLength < 2 || nameLength > 71) continue;
       const nameStart = lenIdx + 1;
       const nameEnd = nameStart + nameLength;
       if (nameEnd > buf.length) continue;
@@ -331,7 +331,7 @@ function scanEntityNameBindings(buf) {
       for (let j = searchFrom; j < searchTo; j++) {
         if (buf[j] !== 0x07) continue;
         const nameLen = buf[j + 1];
-        if (nameLen < 1 || nameLen > 16 || j + 2 + nameLen > buf.length)
+        if (nameLen < 1 || nameLen > 71 || j + 2 + nameLen > buf.length)
           continue;
         const name = tryDecodeNickname(buf.slice(j + 2, j + 2 + nameLen));
         if (name) {
@@ -368,20 +368,21 @@ function parseOwnNicknamePacket(pkt, oo) {
     if (actor.length <= 0 || actor.value < 100) return null;
     off += actor.length;
 
-    // Scan up to 200 bytes for the 0x07 name anchor — spawn packets are large
+    // Kotlin parity: own nickname packet scans only a short 10-byte window
+    // for the 0x07 anchor, then reads the name length as VarInt.
     const splitter = pkt
-      .slice(off, Math.min(pkt.length, off + 200))
+      .slice(off, Math.min(pkt.length, off + 10))
       .indexOf(0x07);
     if (splitter < 0) return null;
     off += splitter + 1;
 
-    const nameLen = (buf) => buf[0];
-    const nl = pkt[off];
-    if (nl < 1 || nl > 16) return null;
-    off += 1;
+    const nameLenInfo = readVarInt(pkt, off);
+    if (nameLenInfo.length <= 0) return null;
+    off += nameLenInfo.length;
 
-    if (pkt.length < off + nl) return null;
-    const name = tryDecodeNickname(pkt.slice(off, off + nl));
+    if (nameLenInfo.value < 1 || nameLenInfo.value > 71) return null;
+    if (pkt.length < off + nameLenInfo.value) return null;
+    const name = tryDecodeNickname(pkt.slice(off, off + nameLenInfo.value));
     if (!name) return null;
 
     return {type: 'nickname', actorId: actor.value, name};

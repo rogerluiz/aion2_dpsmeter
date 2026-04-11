@@ -89,6 +89,41 @@ jobs:
           $sz = [math]::Round((Get-Item $exe).Length / 1MB, 1)
           Write-Host "aion2_server.exe: $sz MB"
 
+      - name: Prepare code signing certificate
+        id: codesign
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_PASSWORD)) {
+            "ENABLED=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Code signing disabled: secrets not configured"
+            exit 0
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -like "*x64*" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { Write-Error "signtool.exe not found"; exit 1 }
+          "ENABLED=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "PFX_PATH=$pfxPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "SIGNTOOL=$signtool" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Code signing enabled"
+
+      - name: Sign backend executable
+        if: ${{ steps.codesign.outputs.ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          & "${{ steps.codesign.outputs.SIGNTOOL }}" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f "${{ steps.codesign.outputs.PFX_PATH }}" /p "$env:WINDOWS_PFX_PASSWORD" "server\dist\aion2_server.exe"
+          if ($LASTEXITCODE -ne 0) { Write-Error "Failed to sign aion2_server.exe"; exit 1 }
+          Write-Host "Signed aion2_server.exe"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -119,6 +154,17 @@ jobs:
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Write-Host "Flutter build completed"
+
+      - name: Sign Flutter executable
+        if: ${{ steps.codesign.outputs.ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          $appExe = "frontend\build\windows\x64\runner\Release\aion2_dpsmeter.exe"
+          & "${{ steps.codesign.outputs.SIGNTOOL }}" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f "${{ steps.codesign.outputs.PFX_PATH }}" /p "$env:WINDOWS_PFX_PASSWORD" $appExe
+          if ($LASTEXITCODE -ne 0) { Write-Error "Failed to sign aion2_dpsmeter.exe"; exit 1 }
+          Write-Host "Signed aion2_dpsmeter.exe"
 
       - name: Create distribution package
         id: dist
@@ -172,6 +218,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Error "makensis failed"; exit 1 }
           $sz = [math]::Round((Get-Item "aion2_dpsmeter-$v-setup.exe").Length/1MB,1)
           Write-Host "Installer: aion2_dpsmeter-$v-setup.exe ($sz MB)"
+
+      - name: Sign NSIS installer
+        if: ${{ steps.codesign.outputs.ENABLED == 'true' }}
+        shell: pwsh
+        env:
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          $setupExe = "installer\aion2_dpsmeter-${{ steps.ver.outputs.VERSION }}-setup.exe"
+          & "${{ steps.codesign.outputs.SIGNTOOL }}" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f "${{ steps.codesign.outputs.PFX_PATH }}" /p "$env:WINDOWS_PFX_PASSWORD" $setupExe
+          if ($LASTEXITCODE -ne 0) { Write-Error "Failed to sign setup.exe"; exit 1 }
+          Write-Host "Signed installer"
 
       - name: Generate changelog
         shell: pwsh
