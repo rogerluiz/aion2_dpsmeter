@@ -143,8 +143,18 @@ if (isMock) {
   try {
     capture.start(ifaceArg);
   } catch (err) {
-    console.error('\n[ERROR]', err.message, '\n');
-    process.exit(1);
+    console.error('[ERROR] Falha ao iniciar captura:', err.message);
+    console.error('[WARN] Iniciando em modo MOCK — instale o Npcap para captura real.');
+
+    // Cai em mock para o WS server continuar funcionando
+    const mockPlayers = ['player_1', 'player_2'];
+    let tick = 0;
+    setInterval(() => {
+      tick++;
+      const actorId = tick % 2 === 0 ? 1 : 2;
+      const damage = Math.floor(Math.random() * 8000) + 500;
+      calculator.addEvent({actorId, damage, isCrit: Math.random() > 0.65, isDot: false, skillCode: 0x1234});
+    }, 500);
   }
 
   // Graceful shutdown

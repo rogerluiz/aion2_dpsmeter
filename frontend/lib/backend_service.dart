@@ -7,6 +7,10 @@ import 'package:path/path.dart' as path;
 class BackendService {
   Process? _backendProcess;
   bool _isRunning = false;
+  Timer? _restartTimer;
+  int _restartAttempts = 0;
+  static const int _maxRestartAttempts = 5;
+  static const Duration _restartDelay = Duration(seconds: 5);
 
   static const String _exeName = 'aion2_server.exe';
 
@@ -46,14 +50,23 @@ class BackendService {
       // Drena stdout/stderr para o pipe não encher e travar o processo filho
       _backendProcess!.stdout.drain<void>();
       _backendProcess!.stderr.drain<void>();
-      // Monitora saída inesperada: reseta _isRunning para permitir relançamento
+      // Monitora saída inesperada: reseta _isRunning e agenda reinício automático
       _backendProcess!.exitCode.then((code) {
         debugPrint('Servidor encerrou (exit=$code)');
         _isRunning = false;
         _backendProcess = null;
+        if (code != 0 && _restartAttempts < _maxRestartAttempts) {
+          _restartAttempts++;
+          debugPrint('Reiniciando servidor em ${_restartDelay.inSeconds}s (tentativa $_restartAttempts/$_maxRestartAttempts)...');
+          _restartTimer?.cancel();
+          _restartTimer = Timer(_restartDelay, () => start());
+        } else if (code != 0) {
+          debugPrint('Servidor falhou $_maxRestartAttempts vezes — desistindo.');
+        }
       });
       _isRunning = true;
       await Future.delayed(const Duration(seconds: 2));
+      _restartAttempts = 0; // processo ficou estável — reseta contador
       debugPrint('Servidor iniciado (PID: ${_backendProcess!.pid})');
       return true;
     } catch (e) {
@@ -110,9 +123,20 @@ class BackendService {
     );
     _backendProcess!.stdout.drain<void>();
     _backendProcess!.stderr.drain<void>();
+    _backendProcess!.exitCode.then((code) {
+      debugPrint('[Dev] Servidor node encerrou (exit=$code)');
+      _isRunning = false;
+      _backendProcess = null;
+      if (code != 0 && _restartAttempts < _maxRestartAttempts) {
+        _restartAttempts++;
+        _restartTimer?.cancel();
+        _restartTimer = Timer(_restartDelay, () => start());
+      }
+    });
     _isRunning = true;
     // node precisa de um pouco mais de tempo para JIT + bind ws
     await Future.delayed(const Duration(seconds: 3));
+    _restartAttempts = 0;
     debugPrint('[Dev] Servidor node iniciado (PID: ${_backendProcess!.pid})');
     return true;
   }
