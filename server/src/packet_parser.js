@@ -210,7 +210,7 @@ function scanNicknamesInBuffer(buf, startAt = 0) {
         const nameOff = i + 2;
         if (nameOff >= buf.length) continue;
         const nameLen = buf[nameOff];
-        if (nameLen < 2 || nameLen > 36 || nameOff + 1 + nameLen > buf.length)
+        if (nameLen < 2 || nameLen > 71 || nameOff + 1 + nameLen > buf.length)
           continue;
         const nameBytes = buf.slice(nameOff + 1, nameOff + 1 + nameLen);
         const name = tryDecodeNickname(nameBytes);
@@ -239,7 +239,7 @@ function scanNicknamesInBuffer(buf, startAt = 0) {
         for (let j = i + 2 + av.length; j < scanEnd; j++) {
           if (buf[j] === 0x07) {
             const nameLen = buf[j + 1];
-            if (nameLen < 2 || nameLen > 36 || j + 2 + nameLen > buf.length)
+            if (nameLen < 2 || nameLen > 71 || j + 2 + nameLen > buf.length)
               continue;
             const nameBytes = buf.slice(j + 2, j + 2 + nameLen);
             const name = tryDecodeNickname(nameBytes);

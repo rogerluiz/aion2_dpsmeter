@@ -6,6 +6,8 @@
 const EventEmitter = require('events');
 const {getSkillName} = require('./skill_names');
 
+const RECENT_TARGET_WINDOW_MS = 15000;
+
 // --- Class detection from skill code (port of A2Tools job_class.rs) ----------
 const CLASS_NAMES = {
   11: 'Gladiator',
@@ -31,6 +33,10 @@ function detectClass(skillCode) {
     return CLASS_NAMES[prefix] || null;
   }
   return null;
+}
+
+function isResolvedPlayer(player) {
+  return player.class_name !== '' || !player.name.startsWith('Player_');
 }
 
 class DpsCalculator extends EventEmitter {
@@ -81,6 +87,7 @@ class DpsCalculator extends EventEmitter {
         parries: 0,
         maxHit: 0,
         _window: [], // [{t, dmg, targetId}]
+        _lastEventAt: Date.now(),
         _firstHit: Date.now(),
         _targetDmg: {}, // {targetId: totalDmg}
         _targetHits: {}, // {targetId: hitCount}
@@ -106,7 +113,9 @@ class DpsCalculator extends EventEmitter {
     if (event.isDouble) p.doubles += 1;
     if (event.isParry) p.parries += 1;
     if (dmg > p.maxHit) p.maxHit = dmg;
-    p._window.push({t: Date.now(), dmg, targetId: tId});
+    p._lastEventAt = Date.now();
+    p._window.push({t: p._lastEventAt, dmg, targetId: tId});
+    p._window = p._window.filter((e) => p._lastEventAt - e.t <= RECENT_TARGET_WINDOW_MS);
 
     // Per-target totals (for 'target' filter mode)
     if (tId) {
@@ -140,15 +149,25 @@ class DpsCalculator extends EventEmitter {
    * Returns the targetId most hit across all players (for auto-target detection).
    */
   getTopTarget() {
+    const now = Date.now();
     const counts = {};
+    const damages = {};
     for (const p of Object.values(this._players)) {
-      for (const [tid, cnt] of Object.entries(p._targetHits)) {
-        counts[tid] = (counts[tid] || 0) + cnt;
+      for (const ev of p._window) {
+        if (!ev.targetId || now - ev.t > RECENT_TARGET_WINDOW_MS) continue;
+        counts[ev.targetId] = (counts[ev.targetId] || 0) + 1;
+        damages[ev.targetId] = (damages[ev.targetId] || 0) + ev.dmg;
       }
     }
     const entries = Object.entries(counts);
     if (!entries.length) return null;
-    return Number(entries.sort((a, b) => b[1] - a[1])[0][0]);
+    return Number(
+      entries.sort((a, b) => {
+        const cnt = b[1] - a[1];
+        if (cnt !== 0) return cnt;
+        return (damages[b[0]] || 0) - (damages[a[0]] || 0);
+      })[0][0],
+    );
   }
 
   /**
@@ -166,9 +185,10 @@ class DpsCalculator extends EventEmitter {
 
     let allPlayers = Object.values(this._players);
 
-    // 'party' mode: only actors with a detected class (real players, not NPCs)
+    // 'party' mode: prefer real players by detected class or resolved nickname.
+    // This avoids hiding party members before their first class-resolving skill.
     if (filterMode === 'party') {
-      allPlayers = allPlayers.filter((p) => p.class_name !== '');
+      allPlayers = allPlayers.filter((p) => isResolvedPlayer(p));
     }
 
     const players = allPlayers
