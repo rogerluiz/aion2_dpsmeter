@@ -36,7 +36,7 @@ function detectClass(skillCode) {
 }
 
 function isResolvedPlayer(player) {
-  return player.class_name !== '' || !player.name.startsWith('Player_');
+  return player.class_name !== '';
 }
 
 class DpsCalculator extends EventEmitter {
@@ -269,11 +269,14 @@ class DpsCalculator extends EventEmitter {
    * an actorId not seen in combat, we auto-alias it to any unnamed combat
    * player — this bridges the dual-ID gap for solo play.
    */
-  setNickname(actorId, nickname) {
+  setNickname(actorId, nickname, className = null) {
     this._nicknameCache[actorId] = nickname;
     if (this._players[actorId]) {
       // Direct match: combat ID == display ID
       this._players[actorId].name = nickname;
+      if (!this._players[actorId].class_name && className) {
+        this._players[actorId].class_name = className;
+      }
       this.emit('nameUpdated', actorId);
       return;
     }
@@ -285,6 +288,9 @@ class DpsCalculator extends EventEmitter {
     if (unnamed.length === 1) {
       // Only one unnamed combat player → assume this nickname is theirs
       unnamed[0].name = nickname;
+      if (!unnamed[0].class_name && className) {
+        unnamed[0].class_name = className;
+      }
       this._nicknameCache[unnamed[0].id] = nickname;
       this.emit('nameUpdated', unnamed[0].id);
     }

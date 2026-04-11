@@ -12,6 +12,21 @@
 
 const {normalizeSkillCode} = require('./skill_names');
 
+const JOB_CLASS_NAMES = {
+  11: 'Gladiator',
+  12: 'Templar',
+  13: 'Assassin',
+  14: 'Ranger',
+  15: 'Sorcerer',
+  16: 'Elementalist',
+  17: 'Cleric',
+  18: 'Chanter',
+};
+
+function classFromJobCode(jobCode) {
+  return JOB_CLASS_NAMES[jobCode] || null;
+}
+
 // ─── VarInt ─────────────────────────────────────────────────────────────────
 function readVarInt(buf, offset) {
   let value = 0,
@@ -321,23 +336,29 @@ function parseNickname04_8D(pkt, oo) {
 function scanEntityNameBindings(buf) {
   const found = [];
   try {
+    let lastAnchor = null;
+    const namedActors = new Set();
     for (let i = 0; i < buf.length - 2; i++) {
-      if (buf[i] !== 0x36) continue;
-      const actorInfo = readVarInt(buf, i + 1);
-      if (actorInfo.length <= 0 || actorInfo.value < 1000) continue;
-      const searchFrom = i + 1 + actorInfo.length;
-      // Use a large window (256 bytes) — player spawn packets can be large
-      const searchTo = Math.min(buf.length - 2, searchFrom + 256);
-      for (let j = searchFrom; j < searchTo; j++) {
-        if (buf[j] !== 0x07) continue;
-        const nameLen = buf[j + 1];
-        if (nameLen < 1 || nameLen > 71 || j + 2 + nameLen > buf.length)
-          continue;
-        const name = tryDecodeNickname(buf.slice(j + 2, j + 2 + nameLen));
-        if (name) {
-          found.push({actorId: actorInfo.value, name});
-          break;
-        }
+      if (buf[i] === 0x36) {
+        // Skip 40 36 / 44 36 explicit spawn opcodes.
+        if (i > 0 && (buf[i - 1] === 0x40 || buf[i - 1] === 0x44)) continue;
+        const actorInfo = readVarInt(buf, i + 1);
+        lastAnchor =
+          actorInfo.length > 0 && actorInfo.value >= 100
+            ? {actorId: actorInfo.value, endIdx: i + 1 + actorInfo.length}
+            : null;
+        continue;
+      }
+
+      if (buf[i] !== 0x07 || !lastAnchor) continue;
+      const nameLen = buf[i + 1];
+      if (nameLen < 1 || nameLen > 71 || i + 2 + nameLen > buf.length) continue;
+      const distance = i - lastAnchor.endIdx;
+      if (distance < 0 || distance > 64) continue;
+      const name = tryDecodeNickname(buf.slice(i + 2, i + 2 + nameLen));
+      if (name && !namedActors.has(lastAnchor.actorId)) {
+        found.push({actorId: lastAnchor.actorId, name});
+        namedActors.add(lastAnchor.actorId);
       }
     }
   } catch (_) {
@@ -384,8 +405,15 @@ function parseOwnNicknamePacket(pkt, oo) {
     if (pkt.length < off + nameLenInfo.value) return null;
     const name = tryDecodeNickname(pkt.slice(off, off + nameLenInfo.value));
     if (!name) return null;
+    off += nameLenInfo.value;
 
-    return {type: 'nickname', actorId: actor.value, name};
+    let className = null;
+    if (pkt.length >= off + 3) {
+      off += 2; // server id
+      className = classFromJobCode(pkt[off] & 0xff);
+    }
+
+    return {type: 'nickname', actorId: actor.value, name, className};
   } catch (_) {
     return null;
   }
@@ -425,7 +453,9 @@ function parseSpawnNicknamePacket(pkt, oo) {
       if (pkt.length < off + nameLen.value) continue;
       const name = tryDecodeNickname(pkt.slice(off, off + nameLen.value));
       if (name) {
-        return {type: 'nickname', actorId: actor.value, name};
+        off += nameLen.value;
+        const className = pkt.length > off ? classFromJobCode(pkt[off] & 0xff) : null;
+        return {type: 'nickname', actorId: actor.value, name, className};
       }
     }
   } catch (_) {

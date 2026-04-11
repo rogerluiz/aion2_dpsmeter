@@ -123,7 +123,7 @@ if (isMock) {
     const events = streamParser.consume(pkt.connKey, pkt.payload);
     events.forEach((ev) => {
       if (ev.type === 'nickname') {
-        calculator.setNickname(ev.actorId, ev.name);
+        calculator.setNickname(ev.actorId, ev.name, ev.className || null);
         console.log(`[NICK] actor=${ev.actorId} name="${ev.name}"`);
         return;
       }
@@ -167,7 +167,13 @@ if (isMock) {
       tick++;
       const actorId = tick % 2 === 0 ? 1 : 2;
       const damage = Math.floor(Math.random() * 8000) + 500;
-      calculator.addEvent({actorId, damage, isCrit: Math.random() > 0.65, isDot: false, skillCode: 0x1234});
+      calculator.addEvent({
+        actorId,
+        damage,
+        isCrit: Math.random() > 0.65,
+        isDot: false,
+        skillCode: 0x1234,
+      });
     }, 500);
   }
 
